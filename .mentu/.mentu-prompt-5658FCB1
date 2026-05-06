@@ -1,0 +1,388 @@
+## Prior Steps
+
+### ntx-scaffold (OK, 92s, $0.37)
+The scaffold already exists from a prior run. Let me verify all artifacts match the spec before declaring complete.The scaffold from a prior run is in place (commit `b6af62b`). The modified `src/core/client.ts` is uncommitted downstream work I should not touch. Let me check what's missing — `@types/gray-matter` from the spec — and run the tsc verification.`@types/gray-matter` doesn't exist on npm (gray-matter ships its own types). Skipping. Now running tsc verification.All scaffold artifacts are in place and `tsc --noEmit` completes with zero errors. The prior scaffold commit `b6af62b` is intact; the uncommitted modification to `src/core/client.ts` is downstream work I'm leaving untouched. `@types/gray-matter` does not exist on the npm registry (gray-matter ships its own types), so that one piece of the spec is not installable — everything else matches.
+
+STEP_COMPLETE
+
+### ntx-core (OK, 110s, $0.79)
+All 4 files exist and match the spec. The existing implementation has one necessary deviation: `client.ts` uses `dataSources.query` (v5+ API) since `databases.query` was removed in `@notionhq/client@^5.20.0`. `tsc --noEmit` exits 0.
+
+- `src/core/client.ts` — NotionClient with `notion` field, `queryDatabase`, `paginateDatabase`, `getPageBlocks`. Uses v5 `dataSources.query` and filters with `isFullPage`.
+- `src/core/renderer.ts` — NtxRenderer with all 7 custom transformers (image, callout, column_list, column, table, embed, video) and `renderPage`.
+- `src/core/state.ts` — `loadState`, `saveState` (atomic via tmp+rename), `needsUpdate`, `updatePageState`.
+- `src/pipeline/images.ts` — `processImage` with sha256 canonical hash, dedup-on-exists, https download, sharp webp conversion.
+
+STEP_COMPLETE
+
+### ntx-adapters (OK, 224s, $1.91)
+Now let me check what's in `src/core/renderer.ts` and `src/pipeline/images.ts` to understand the existing patterns.Now I have all the context. Let me write the files.Now running TypeScript verification.All 5 files written and `tsc --noEmit` exits 0.
+
+- `src/schema.ts` — Zod `PostFrontmatterSchema` mirroring `lib/types.ts` plus typed `extractProperties(page)` with discriminated-union narrowing on `title`/`select`/`multi_select`/`checkbox`/`cover` (no `any` casts).
+- `src/adapters/markdown.ts` — `MarkdownAdapter.write` with mkdir, write-once Published, preserve-created, gray-matter stringify.
+- `src/adapters/mdx.ts` — `MdxAdapter.write` emits `export const meta = { ... }` block (JSON.stringify, not YAML) followed by title and content.
+- `src/adapters/json.ts` — `JsonAdapter.write` with `slug`, `frontmatter`, `content`, `readingTime` (Math.ceil(words/200)), `generatedAt`.
+- `src/pipeline/content.ts` — `stripMarkdownInline`, `extractComment`, `detectLanguage` ported verbatim from `lib/content-utils.ts`.
+
+STEP_COMPLETE
+---
+Read `docs/context/CONTEXT-ntx-build.md` for accumulated findings from prior steps (if it exists).
+
+---
+
+MAX_THINKING_TOKENS=63999
+
+# Step: ntx-cli — Wire all subsystems + build the CLI
+
+Working directory: /Users/rashid/Desktop/notion-x/
+
+Before writing any code, read all existing src/ files to understand their exported APIs:
+- src/core/client.ts, src/core/renderer.ts, src/core/state.ts
+- src/pipeline/images.ts, src/pipeline/content.ts
+- src/adapters/markdown.ts, src/adapters/mdx.ts, src/adapters/json.ts
+- src/schema.ts, src/types.ts, ntx.config.example.ts
+
+## File 1: src/types.ts — NtxConfig interface
+
+Move the NtxConfig interface here (it was defined in ntx.config.example.ts as a reference;
+now make it the canonical source):
+
+```typescript
+export interface NtxConfig {
+  database: string
+  output: string
+  adapter: 'markdown' | 'mdx' | 'json'
+  images: {
+    download: boolean
+    outputDir: string
+    format: 'webp' | 'original'
+    quality: number
+  }
+  schema: {
+    strict: boolean
+  }
+  watch?: {
+    interval: number
+  }
+}
+```
+
+## File 2: src/config.ts — Config loader
+
+```typescript
+import * as path from 'path'
+import * as fs from 'fs'
+import type { NtxConfig } from './types.js'
+
+export async function loadConfig(cwd?: string): Promise<NtxConfig> {
+  const dir = cwd ?? process.cwd()
+  const configPath = path.join(dir, 'ntx.config.ts')
+
+  if (!fs.existsSync(configPath)) {
+    throw new Error(`No ntx.config.ts found in ${dir}. Run \`ntx init\` to create one.`)
+  }
+
+  // Use tsx/ts-node for dynamic import of TypeScript config
+  // Actually: require the user to build first OR use a workaround
+  // Best approach: use `tsx` if available, otherwise fall back to reading the JS equivalent
+  // For v0.1.0: require users to have a ntx.config.js OR use a compiled approach
+  // Simplest: check for ntx.config.js first (compiled), fall back to dynamic import with tsx
+  const jsConfigPath = path.join(dir, 'ntx.config.js')
+  const targetPath = fs.existsSync(jsConfigPath) ? jsConfigPath : configPath
+
+  try {
+    const mod = await import(targetPath)
+    const config: NtxConfig = mod.default ?? mod
+    // Validate required fields
+    if (!config.database) throw new Error('ntx.config: `database` is required')
+    if (!config.output) throw new Error('ntx.config: `output` is required')
+    if (!config.adapter) throw new Error('ntx.config: `adapter` is required')
+    return config
+  } catch (err: any) {
+    if (err.code === 'ERR_UNKNOWN_FILE_EXTENSION') {
+      throw new Error(
+        'Cannot import ntx.config.ts directly. Either compile it first (tsc), ' +
+        'or rename it to ntx.config.js and use ES module syntax.'
+      )
+    }
+    throw err
+  }
+}
+```
+
+## File 3: src/cli.ts — Full Commander.js CLI
+
+First line must be: `#!/usr/bin/env node`
+
+Use Commander.js. Structure:
+
+```typescript
+#!/usr/bin/env node
+import { Command } from 'commander'
+import chalk from 'chalk'
+import ora from 'ora'
+import * as path from 'path'
+import * as fs from 'fs'
+// ... other imports
+
+const program = new Command()
+program
+  .name('ntx')
+  .description('Notion to X — sync any Notion database to local content files')
+  .version('0.1.0')
+
+// Commands defined below
+
+program.parse(process.argv)
+```
+
+### Command: ntx init
+
+```
+program
+  .command('init')
+  .description('Create ntx.config.ts in the current directory')
+  .action(async () => { ... })
+```
+
+Action:
+1. Check if `ntx.config.ts` already exists in `process.cwd()`. If yes, exit with error:
+   `chalk.red('ntx.config.ts already exists. Delete it first to reinitialize.')`
+2. Read template from `/Users/rashid/Desktop/notion-x/ntx.config.example.ts`
+3. Write it to `process.cwd()/ntx.config.ts`
+4. Print `chalk.green('✓ Created ntx.config.ts — edit it before running ntx sync')`
+
+### Command: ntx sync
+
+```
+program
+  .command('sync')
+  .description('Sync Notion database to local content files')
+  .option('--incremental', 'Only sync pages changed since last run', false)
+  .option('--db <id>', 'Override the database ID from config')
+  .action(async (opts) => { ... })
+```
+
+Action (full sync pipeline):
+```typescript
+const config = await loadConfig()
+const outputDir = path.resolve(config.output)
+const state = loadState(outputDir)
+const client = new NotionClient()
+const renderer = new NtxRenderer(client)
+
+// Pick adapter
+const adapter = config.adapter === 'mdx'
+  ? new MdxAdapter()
+  : config.adapter === 'json'
+  ? new JsonAdapter()
+  : new MarkdownAdapter()
+
+const databaseId = opts.db ?? config.database
+let synced = 0, skipped = 0
+const startTime = Date.now()
+
+for await (const page of client.paginateDatabase(databaseId)) {
+  const props = extractProperties(page)
+  if (!props.title) continue
+
+  const slug = slugify(props.title)
+  if (!slug) continue
+
+  // Incremental check
+  if (opts.incremental && !needsUpdate(state, page.id, page.last_edited_time)) {
+    skipped++
+    continue
+  }
+
+  const spinner = ora(`Syncing ${slug}...`).start()
+
+  try {
+    // Render markdown
+    let content = await renderer.renderPage(page.id)
+
+    // Resolve image placeholders
+    if (config.images.download) {
+      const imageDir = path.resolve(config.images.outputDir)
+      content = await resolveImagePlaceholders(content, slug, imageDir, config.images.quality)
+    }
+
+    // Auto-enrich
+    const language = props.language || detectLanguage(content)
+    const comment = extractComment(content, props.title)
+
+    // Build frontmatter
+    const today = new Date().toISOString().split('T')[0]
+    const frontmatter: PostFrontmatter = {
+      id: slug,
+      path: `/blog/${slug}.md`,
+      type: 'essay',
+      intent: 'reference',
+      version: '1.0',
+      created: today,
+      last_updated: today,
+      source: { platform: 'notion', page_id: page.id },
+      meta: {
+        title: props.title,
+        author: 'Rashid Azarang',
+        category: [],
+        main_tag: null,
+        tags: props.tags,
+        featured: props.featured,
+        featured_at: props.featured_at,
+        language,
+        post_type: 'Post',
+        status: props.status,
+        comment,
+        cover_image: props.cover_image,
+      },
+    }
+
+    // Validate if strict mode
+    if (config.schema.strict) {
+      validateFrontmatter(frontmatter)
+    }
+
+    // Write
+    adapter.write(slug, frontmatter, content, outputDir)
+
+    // Update state
+    const newState = updatePageState(state, {
+      pageId: page.id,
+      slug,
+      lastEditedTime: page.last_edited_time,
+      outputPath: path.join(outputDir, slug + '.md'),
+      imageHashes: {},
+    })
+    Object.assign(state, newState)
+
+    spinner.succeed(chalk.green(`✓ ${slug}`))
+    synced++
+  } catch (err: any) {
+    spinner.fail(chalk.red(`✗ ${slug}: ${err.message}`))
+  }
+}
+
+// Update lastFullSync if not incremental
+if (!opts.incremental) {
+  state.lastFullSync = new Date().toISOString()
+}
+saveState(outputDir, state)
+
+const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
+console.log(chalk.blue(`\nSynced ${synced} pages (${skipped} skipped) in ${elapsed}s`))
+```
+
+Helper function `slugify(title: string): string`:
+```typescript
+function slugify(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .trim()
+}
+```
+
+Helper function `resolveImagePlaceholders`:
+```typescript
+async function resolveImagePlaceholders(
+  content: string,
+  slug: string,
+  imageDir: string,
+  quality: number = 80
+): Promise<string> {
+  // Find all `![image](notion:{blockId})` patterns
+  // For each: we can't resolve the actual URL from blockId alone in this step
+  // Instead: strip the placeholder (Notion image blocks are fetched with actual URLs in the renderer)
+  // This is a known limitation of v0.1.0 — image URLs must come from renderer, not block IDs
+  return content.replace(/!\[image\]\(notion:[^)]+\)/g, '')
+}
+```
+
+Note: Image resolution from placeholders is a v0.2.0 feature. For v0.1.0, strip placeholders
+since actual image URLs must be captured during rendering (not from block IDs alone). The
+renderer should be updated in a future step to capture URLs during rendering instead of
+emitting block ID placeholders.
+
+### Command: ntx watch
+
+```
+program
+  .command('watch')
+  .description('Poll and incrementally sync on interval')
+  .option('--interval <seconds>', 'Poll interval in seconds', '60')
+  .action(async (opts) => { ... })
+```
+
+Action:
+1. Load config
+2. Show `chalk.blue('Watching... (Ctrl+C to stop)')`
+3. Run `sync --incremental` immediately
+4. `setInterval` to run it again every `parseInt(opts.interval) * 1000` ms
+5. Between polls, show timestamp
+
+### Command: ntx validate
+
+```
+program
+  .command('validate')
+  .description('Validate all output files against the Zod schema')
+  .action(async () => { ... })
+```
+
+Action:
+1. Load config
+2. Find all `*.md` (or `*.mdx` / `*.json` based on adapter) in `config.output`
+3. For each file: parse frontmatter with gray-matter, call `PostFrontmatterSchema.safeParse(data)`
+4. Print `chalk.green('✓ slug')` for pass, `chalk.red('✗ slug: error message')` for fail
+5. Exit with code 1 if any failures
+
+### Command: ntx status
+
+```
+program
+  .command('status')
+  .description('Show sync state and statistics')
+  .action(async () => { ... })
+```
+
+Action:
+1. Load config, read `.ntx-state.json` from output dir
+2. Print:
+   - Last full sync: `state.lastFullSync ?? 'never'`
+   - Total tracked pages: `Object.keys(state.pages).length`
+   - Pages by status: count Published vs other (read from output files)
+   - Any pages where the output file doesn't exist (stale entries)
+
+## File 4: src/index.ts — Public programmatic API
+
+Export everything consumers need:
+```typescript
+export { NotionClient } from './core/client.js'
+export { NtxRenderer } from './core/renderer.js'
+export { loadState, saveState, needsUpdate, updatePageState } from './core/state.js'
+export type { NtxState, PageState } from './core/state.js'
+export { processImage } from './pipeline/images.js'
+export type { ImageProcessOptions, ImageResult } from './pipeline/images.js'
+export { extractComment, detectLanguage, stripMarkdownInline } from './pipeline/content.js'
+export { MarkdownAdapter } from './adapters/markdown.js'
+export { MdxAdapter } from './adapters/mdx.js'
+export { JsonAdapter } from './adapters/json.js'
+export { PostFrontmatterSchema, validateFrontmatter, extractProperties } from './schema.js'
+export type { PostFrontmatter, NotionPageProperties } from './schema.js'
+export { loadConfig } from './config.js'
+export type { NtxConfig } from './types.js'
+```
+
+## Build + verification
+
+1. Run `npm run build` (tsc)
+2. Verify `dist/cli.js` exists
+3. Run `chmod +x dist/cli.js`
+4. Run `node dist/cli.js --help` — must print usage without error
+5. Run `node dist/cli.js sync --help` — must print sync command options
+6. Commit all files: `git add -A && git commit -m "feat: implement ntx CLI"`
+
+Print STEP_COMPLETE on its own line when `node dist/cli.js --help` exits 0.

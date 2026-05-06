@@ -1,0 +1,215 @@
+## Prior Steps
+
+### ntx-scaffold (OK, 105s, $0.46)
+Setting up the `ntx` package scaffold at `/Users/rashid/Desktop/notion-x/`.Now creating the src directory structure, example config, and installing dependencies.All files created. Installing dependencies now.`gray-matter` ships its own types — no `@types` package needed. Installing without it.Now verifying TypeScript compiles cleanly, then initializing git.Zero errors. Initializing git and creating the initial commit.STEP_COMPLETE
+
+Scaffold is done. Package at `/Users/rashid/Desktop/notion-x/` with all 13 src stubs, runtime + dev deps installed, `tsc --noEmit` passing clean, and initial commit `b6af62b` on `main`. One note: `@types/gray-matter` doesn't exist on npm (gray-matter bundles its own types), so dev deps are `typescript` and `@types/node` only.
+---
+Read `docs/context/CONTEXT-ntx-build.md` for accumulated findings from prior steps (if it exists).
+
+---
+
+MAX_THINKING_TOKENS=63999
+
+# Step: ntx-core — Implement core engine
+
+Working directory: /Users/rashid/Desktop/notion-x/
+
+Before writing any code, read these reference files in full:
+- /Users/rashid/Desktop/Workspaces/rashidazarang/scripts/sync-notion.ts
+- /Users/rashid/Desktop/Workspaces/rashidazarang/node_modules/notion-to-md/build/notion-to-md.d.ts
+- /Users/rashid/Desktop/Workspaces/rashidazarang/node_modules/@notionhq/client/build/src/Client.d.ts
+
+## File 1: src/core/client.ts — NotionClient wrapper
+
+Implement a class `NotionClient` that wraps `@notionhq/client`'s `Client`.
+
+Requirements:
+- Constructor accepts `{ apiKey?: string }`. If not passed, reads `process.env.NOTION_API_KEY`.
+  Throws a clear error if neither is available.
+- Enable built-in retry:
+  ```typescript
+  new Client({
+    auth: apiKey,
+    notionVersion: '2022-06-28',
+  })
+  ```
+  (The @notionhq/client v5+ handles retry internally — do NOT implement your own retry loop)
+- `async queryDatabase(databaseId: string, startCursor?: string)`:
+  Calls `this.notion.databases.query({ database_id: databaseId, start_cursor: startCursor, page_size: 100 })`.
+  Returns `{ results: PageObjectResponse[], hasMore: boolean, nextCursor: string | null }`.
+- `async *paginateDatabase(databaseId: string)`:
+  Async generator. Yields one `PageObjectResponse` at a time across all paginated results.
+  Handles `has_more` + `next_cursor` automatically.
+- `async getPageBlocks(pageId: string)`:
+  Calls `this.notion.blocks.children.list({ block_id: pageId })`.
+  Returns the raw results array.
+- Public readonly `notion` field: the underlying `Client` instance.
+  (Required by `NotionToMarkdown` which needs direct access to the client)
+
+Import types: `import { Client, isFullPage } from '@notionhq/client'`
+Import: `import type { PageObjectResponse } from '@notionhq/client/build/src/api-endpoints.js'`
+
+## File 2: src/core/renderer.ts — NtxRenderer
+
+Wraps `NotionToMarkdown` and registers custom transformers for the block types it handles poorly.
+
+DO NOT reimplement the core block-to-markdown conversion. Use `n2m.pageToMarkdown()` and
+`n2m.toMarkdownString()` as-is. Only add custom transformers via `n2m.setCustomTransformer()`.
+
+Custom transformers to register:
+
+**image**: The image pipeline handles actual downloads. The renderer emits a placeholder:
+```typescript
+n2m.setCustomTransformer('image', async (block) => {
+  return `![image](notion:${block.id})`
+})
+```
+
+**callout**: Render as blockquote with emoji prefix:
+```typescript
+n2m.setCustomTransformer('callout', async (block) => {
+  const callout = (block as any).callout
+  const emoji = callout.icon?.emoji ?? '💡'
+  const texts = callout.rich_text?.map((t: any) => t.plain_text).join('') ?? ''
+  return `> ${emoji} ${texts}`
+})
+```
+
+**column_list**: Flatten columns with a divider between them:
+```typescript
+n2m.setCustomTransformer('column_list', async (block) => {
+  // column_list children are column blocks; each column's children are the actual content
+  // Return empty string — the individual column blocks handle rendering
+  return ''
+})
+n2m.setCustomTransformer('column', async (block) => {
+  return '\n---\n'
+})
+```
+
+**table**: Render as GFM pipe table. Fetch the table's children (table_row blocks) to build
+header + body rows. Use `this.client.getPageBlocks(block.id)` to fetch children.
+
+**embed** and **video**: Emit a link so content is not silently dropped:
+```typescript
+n2m.setCustomTransformer('embed', async (block) => {
+  const url = (block as any).embed?.url ?? ''
+  return url ? `[Embedded content](${url})` : ''
+})
+n2m.setCustomTransformer('video', async (block) => {
+  const url = (block as any).video?.external?.url ?? (block as any).video?.file?.url ?? ''
+  return url ? `[Video](${url})` : ''
+})
+```
+
+Expose:
+```typescript
+async renderPage(pageId: string): Promise<string>
+```
+Calls `await this.n2m.pageToMarkdown(pageId)` then `this.n2m.toMarkdownString(blocks).parent`.
+Returns the markdown string.
+
+Constructor takes `client: NotionClient`. Initialize NotionToMarkdown with `client.notion`.
+
+## File 3: src/core/state.ts — Incremental sync state
+
+State file lives at `{outputDir}/.ntx-state.json`.
+
+TypeScript interfaces:
+```typescript
+export interface PageState {
+  pageId: string
+  slug: string
+  lastEditedTime: string        // ISO string from Notion page.last_edited_time
+  outputPath: string            // absolute path of written output file
+  imageHashes: Record<string, string>  // canonical_url → local filename
+}
+
+export interface NtxState {
+  version: 1
+  lastFullSync: string | null   // ISO timestamp of last non-incremental run
+  pages: Record<string, PageState>  // keyed by pageId
+}
+```
+
+Export these functions:
+
+`loadState(outputDir: string): NtxState`
+- Reads `{outputDir}/.ntx-state.json`
+- Returns `{ version: 1, lastFullSync: null, pages: {} }` if file does not exist
+- Parses JSON and returns typed result
+
+`saveState(outputDir: string, state: NtxState): void`
+- Atomic write: write to `{outputDir}/.ntx-state.json.tmp`, then `fs.renameSync` to final path
+- Ensures partial writes don't corrupt the state file
+
+`needsUpdate(state: NtxState, pageId: string, lastEditedTime: string): boolean`
+- Returns `true` if pageId not in state.pages, OR if stored lastEditedTime !== provided value
+- String comparison only — do not parse dates
+
+`updatePageState(state: NtxState, entry: PageState): NtxState`
+- Returns a new NtxState object (immutable update) with entry.pageId → entry in pages
+
+## File 4: src/pipeline/images.ts — Image download + webp conversion
+
+```typescript
+export interface ImageProcessOptions {
+  url: string         // Notion image URL (may have X-Amz- query params)
+  slug: string        // page slug, used in filename
+  outputDir: string   // absolute path to base images directory
+  quality?: number    // webp quality, default 80
+}
+
+export interface ImageResult {
+  localPath: string   // absolute path of written .webp file
+  urlPath: string     // URL path for use in markdown, e.g. /images/slug/abc123-slug.webp
+  hash: string        // 8-char sha256 prefix of canonical URL
+}
+
+export async function processImage(opts: ImageProcessOptions): Promise<ImageResult>
+```
+
+Implementation:
+1. Strip query params for stable caching:
+   ```typescript
+   const u = new URL(opts.url)
+   const canonical = u.origin + u.pathname
+   ```
+2. Hash: `crypto.createHash('sha256').update(canonical).digest('hex').slice(0, 8)`
+3. Filename: `${hash}-${opts.slug}.webp`
+4. Write directory: `path.join(opts.outputDir, opts.slug)`
+5. Full dest path: `path.join(writeDir, filename)`
+6. URL path: `/images/${opts.slug}/${filename}` (relative to public root)
+7. If `destPath` already exists → return cached result immediately (skip download + convert)
+8. Create `writeDir` if it doesn't exist: `fs.mkdirSync(writeDir, { recursive: true })`
+9. Download: use Node `https.get` to download into a Buffer:
+   ```typescript
+   const buffer = await new Promise<Buffer>((resolve, reject) => {
+     https.get(opts.url, (res) => {
+       const chunks: Buffer[] = []
+       res.on('data', (chunk) => chunks.push(chunk))
+       res.on('end', () => resolve(Buffer.concat(chunks)))
+       res.on('error', reject)
+     }).on('error', reject)
+   })
+   ```
+10. Convert: `await sharp(buffer).webp({ quality: opts.quality ?? 80 }).toFile(destPath)`
+11. Return `{ localPath: destPath, urlPath, hash }`
+
+Import: `import sharp from 'sharp'`, `import * as https from 'https'`,
+`import * as crypto from 'crypto'`, `import * as fs from 'fs'`, `import * as path from 'path'`
+
+## TypeScript verification
+
+After implementing all 4 files, run:
+```bash
+cd /Users/rashid/Desktop/notion-x/ && npx tsc --noEmit
+```
+
+Fix all TypeScript errors before finishing. Common issues:
+- NodeNext module resolution requires `.js` extensions on all relative imports
+- `PageObjectResponse` type import path must be exact
+- `notion-to-md` may need `// @ts-ignore` on specific lines if types are incomplete
+
+When `npx tsc --noEmit` exits 0, print STEP_COMPLETE on its own line.
