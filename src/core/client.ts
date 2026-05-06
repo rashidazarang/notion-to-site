@@ -11,23 +11,23 @@ export class NotionClient {
         'Notion API key is required. Pass { apiKey } or set NOTION_API_KEY environment variable.'
       )
     }
-    this.notion = new Client({
-      auth: apiKey,
-      notionVersion: '2022-06-28',
-    })
+    this.notion = new Client({ auth: apiKey, notionVersion: '2022-06-28' })
   }
 
   async queryDatabase(databaseId: string, startCursor?: string) {
-    const response = await this.notion.dataSources.query({
-      data_source_id: databaseId,
-      start_cursor: startCursor,
-      page_size: 100,
+    const response = await (this.notion as any).request({
+      path: `databases/${databaseId}/query`,
+      method: 'POST',
+      body: {
+        start_cursor: startCursor,
+        page_size: 100,
+      },
     })
-    const results = response.results.filter(isFullPage) as PageObjectResponse[]
+    const results = (response.results as any[]).filter(isFullPage) as PageObjectResponse[]
     return {
       results,
-      hasMore: response.has_more,
-      nextCursor: response.next_cursor,
+      hasMore: response.has_more as boolean,
+      nextCursor: response.next_cursor as string | null,
     }
   }
 

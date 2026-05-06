@@ -66,6 +66,6 @@ export class NtxRenderer {
 
   async renderPage(pageId: string): Promise<string> {
     const blocks = await this.n2m.pageToMarkdown(pageId)
-    return this.n2m.toMarkdownString(blocks).parent
+    return this.n2m.toMarkdownString(blocks).parent ?? ''
   }
 }
