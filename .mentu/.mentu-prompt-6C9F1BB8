@@ -1,0 +1,195 @@
+## Prior Steps
+
+### ntx-scaffold (OK, 92s, $0.37)
+The scaffold already exists from a prior run. Let me verify all artifacts match the spec before declaring complete.The scaffold from a prior run is in place (commit `b6af62b`). The modified `src/core/client.ts` is uncommitted downstream work I should not touch. Let me check what's missing — `@types/gray-matter` from the spec — and run the tsc verification.`@types/gray-matter` doesn't exist on npm (gray-matter ships its own types). Skipping. No
+...
+
+### ntx-core (OK, 110s, $0.79)
+All 4 files exist and match the spec. The existing implementation has one necessary deviation: `client.ts` uses `dataSources.query` (v5+ API) since `databases.query` was removed in `@notionhq/client@^5.20.0`. `tsc --noEmit` exits 0.
+
+- `src/core/client.ts` — NotionClient with `notion` field, `queryDatabase`, `paginateDatabase`, `getPageBlocks`. Uses v5 `dataSources.query` and filters with `isFullPage`.
+- `src/core/renderer.ts` — NtxRenderer with 
+...
+
+### ntx-adapters (OK, 224s, $1.91)
+Now let me check what's in `src/core/renderer.ts` and `src/pipeline/images.ts` to understand the existing patterns.Now I have all the context. Let me write the files.Now running TypeScript verification.All 5 files written and `tsc --noEmit` exits 0.
+
+- `src/schema.ts` — Zod `PostFrontmatterSchema` mirroring `lib/types.ts` plus typed `extractProperties(page)` with discriminated-union narrowing on `title`/`select`/`multi_select`/`checkbox`/`cover` (no `any` casts).
+- `src/adapters/markdown.ts` — `MarkdownAdapter.write` with mkdir, write-once Published, preserve-created, gray-matter stringify.
+- `src/adapters/mdx.ts` — `MdxAdapter.write` emits `export const meta = { ... }` block (JSON.stringify, not YAML) followed by title and content.
+- `src/adapters/json.ts` — `JsonAdapter.write` with `slug`, `frontmatter`, `content`, `readingTime` (Math.ceil(words/200)), `generatedAt`.
+- `src/pipeline/content.ts` — `stripMarkdownInlin
+...
+
+### ntx-cli (OK, 119s, $0.74)
+I have all the context. Now writing the four files.Now running the build and verification.Build passes, CLI runs. Now committing.All 4 src files committed. Build verified: `dist/cli.js` exists, executable, `--help` and `sync --help` both run cleanly.
+
+STEP_COMPLETE
+---
+Read `docs/context/CONTEXT-ntx-build.md` for accumulated findings from prior steps (if it exists).
+
+---
+
+MAX_THINKING_TOKENS=63999
+
+# Step: ntx-integrate — Live integration test against real Notion DB
+
+Working directory: /Users/rashid/Desktop/notion-x/
+
+## Pre-flight check
+
+First, verify NOTION_API_KEY is set in the environment:
+```bash
+echo ${NOTION_API_KEY:0:8}...
+```
+If the variable is empty or unset, abort immediately with:
+"ERROR: NOTION_API_KEY is not set. Export it and re-run this step."
+
+## Task 1: Create ntx.config.js for the test run
+
+(We use .js not .ts because dynamic import can't execute TypeScript without a transpiler at runtime)
+
+Write /Users/rashid/Desktop/notion-x/ntx.config.js:
+```javascript
+export default {
+  database: '69f88a28f7ae4a3ab647d86f54282ab0',
+  output: '/Users/rashid/Desktop/notion-x/test-output',
+  adapter: 'markdown',
+  images: {
+    download: true,
+    outputDir: '/Users/rashid/Desktop/notion-x/test-output/images',
+    format: 'webp',
+    quality: 80,
+  },
+  schema: {
+    strict: false,
+  },
+}
+```
+
+Create the test-output/ directory:
+```bash
+mkdir -p /Users/rashid/Desktop/notion-x/test-output
+```
+
+## Task 2: Full sync
+
+Run from /Users/rashid/Desktop/notion-x/:
+```bash
+NOTION_API_KEY="$NOTION_API_KEY" node dist/cli.js sync 2>&1
+```
+
+Capture all output. Record:
+- Total pages synced
+- Number of errors (if any)
+- Elapsed time
+
+If the sync fails with errors, diagnose and fix the underlying issue before continuing.
+Common issues and fixes:
+- TypeScript compile error: run `npm run build` and check the error message
+- `ERR_UNKNOWN_FILE_EXTENSION` on config: verify ntx.config.js exists and uses ES module syntax
+- Notion API auth error: verify NOTION_API_KEY is correct
+- Property extraction crash: check extractProperties() for the specific property type that failed
+
+## Task 3: Incremental sync (second pass — proves state works)
+
+Immediately after the full sync completes, run:
+```bash
+NOTION_API_KEY="$NOTION_API_KEY" node dist/cli.js sync --incremental 2>&1
+```
+
+Expected: most or all pages should be skipped (state file was written after Task 2).
+Record: pages synced vs pages skipped.
+
+If pages are NOT being skipped, investigate state.ts:
+- Check if .ntx-state.json was written to test-output/
+- Verify needsUpdate() comparison logic (string equality on last_edited_time)
+
+## Task 4: Compare output to existing blog files
+
+Existing files: /Users/rashid/Desktop/Workspaces/rashidazarang/blog/*.md
+
+For each file in /Users/rashid/Desktop/notion-x/test-output/*.md:
+1. Extract the slug from filename
+2. Find the matching file in existing blog/ by slug
+3. If found, parse both with gray-matter
+4. Compare these frontmatter fields: title, status, tags, language, comment
+
+Build a comparison table. Flag:
+- Fields that are BETTER in ntx output (e.g., non-empty comment where old was empty)
+- Fields that DIFFER unexpectedly (e.g., different title)
+- Slugs in test-output that have NO match in existing blog/ (new pages)
+- Slugs in existing blog/ that have NO match in test-output/ (missing pages)
+
+DO NOT modify any files in /Users/rashid/Desktop/Workspaces/rashidazarang/.
+
+## Task 5: Validate schema
+
+Run:
+```bash
+node dist/cli.js validate 2>&1
+```
+
+Record: N passed, M failed. For any failures, capture the Zod error message.
+
+If failures exist and they reveal a genuine schema mismatch (e.g., a field in existing data
+that the Zod schema doesn't allow), fix the schema in src/schema.ts, rebuild, and re-run.
+
+## Task 6: Status command
+
+Run:
+```bash
+node dist/cli.js status 2>&1
+```
+
+Capture and include the full output in RESULT.md.
+
+## Task 7: Write RESULT.md
+
+Write /Users/rashid/Desktop/notion-x/RESULT.md with the following sections:
+
+### ntx Integration Test Results
+
+**Date**: {today's date}
+**ntx version**: 0.1.0
+
+### Sync Statistics
+- Pages fetched from Notion: N
+- Pages written to disk: N
+- Errors: N
+- Elapsed time: Xs
+
+### Incremental Sync Verification
+- Second-pass pages synced: N
+- Second-pass pages skipped: N
+- State file working: yes/no
+
+### Schema Validation
+- Passed: N
+- Failed: N
+- Failures: {list any, or "none"}
+
+### Frontmatter Comparison (ntx vs existing sync-notion.ts)
+{the diff table from Task 4}
+
+### Coverage
+- Pages in test-output: N
+- Pages in existing blog/: N
+- New pages (in ntx output, not in old): N
+- Missing pages (in old, not in ntx): N
+
+### Known Gaps / Issues
+{list any bugs, missing features, or unexpected behavior found during testing}
+
+### Recommended Next Steps
+1. Fix any issues listed above
+2. Wire ntx into rashidazarang.com: add as dev dependency, create ntx.config.js, update package.json scripts
+3. Implement proper image URL capture in renderer (currently strips image placeholders)
+4. Consider publishing to npm once integration is stable
+
+After writing RESULT.md, run:
+```bash
+git add -A && git commit -m "test: ntx integration results against rashidazarang.com Notion DB"
+```
+
+Print STEP_COMPLETE on its own line.
