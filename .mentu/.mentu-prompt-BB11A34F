@@ -1,0 +1,206 @@
+## Prior Steps
+
+### ntx-scaffold (OK, 92s, $0.37)
+The scaffold already exists from a prior run. Let me verify all artifacts match the spec before declaring complete.The scaffold from a prior run is in place (commit `b6af62b`). The modified `src/core/client.ts` is uncommitted downstream work I should not touch. Let me check what's missing — `@types/gray-matter` from the spec — and run the tsc verification.`@types/gray-matter` doesn't exist on npm (gray-matter ships its own types). Skipping. Now running tsc verification.All scaffold artifacts are in place and `tsc --noEmit` completes with zero errors. The prior scaffold commit `b6af62b` is intact; the uncommitted modification to `src/core/client.ts` is downstream work I'm leaving untouched. `@types/gray-matter` does not exist on the npm registry (gray-matter ships its own types), so that one piece of the spec is not installable — everything else matches.
+
+STEP_COMPLETE
+
+### ntx-core (OK, 110s, $0.79)
+All 4 files exist and match the spec. The existing implementation has one necessary deviation: `client.ts` uses `dataSources.query` (v5+ API) since `databases.query` was removed in `@notionhq/client@^5.20.0`. `tsc --noEmit` exits 0.
+
+- `src/core/client.ts` — NotionClient with `notion` field, `queryDatabase`, `paginateDatabase`, `getPageBlocks`. Uses v5 `dataSources.query` and filters with `isFullPage`.
+- `src/core/renderer.ts` — NtxRenderer with all 7 custom transformers (image, callout, column_list, column, table, embed, video) and `renderPage`.
+- `src/core/state.ts` — `loadState`, `saveState` (atomic via tmp+rename), `needsUpdate`, `updatePageState`.
+- `src/pipeline/images.ts` — `processImage` with sha256 canonical hash, dedup-on-exists, https download, sharp webp conversion.
+
+STEP_COMPLETE
+---
+Read `docs/context/CONTEXT-ntx-build.md` for accumulated findings from prior steps (if it exists).
+
+---
+
+MAX_THINKING_TOKENS=63999
+
+# Step: ntx-adapters — Schema + output adapters + content pipeline
+
+Working directory: /Users/rashid/Desktop/notion-x/
+
+Before writing any code, read these reference files in full:
+- /Users/rashid/Desktop/Workspaces/rashidazarang/lib/types.ts
+- /Users/rashid/Desktop/Workspaces/rashidazarang/lib/content-utils.ts
+- /Users/rashid/Desktop/Workspaces/rashidazarang/scripts/sync-notion.ts
+
+## File 1: src/schema.ts — Zod schema + property extractor
+
+### Part A: Zod schemas mirroring PostFrontmatter from lib/types.ts
+
+```typescript
+import { z } from 'zod'
+import type { PageObjectResponse } from '@notionhq/client/build/src/api-endpoints.js'
+
+const PostSourceSchema = z.object({
+  platform: z.literal('notion'),
+  page_id: z.string(),
+  url: z.string().optional(),
+  public_url: z.string().optional(),
+})
+
+const PostMetaSchema = z.object({
+  title: z.string(),
+  author: z.string().default('Rashid Azarang'),
+  category: z.array(z.string()).default([]),
+  main_tag: z.string().nullable().default(null),
+  tags: z.array(z.string()).default([]),
+  featured: z.boolean().default(false),
+  featured_at: z.array(z.string()).default([]),
+  language: z.string().default(''),
+  post_type: z.string().default('Post'),
+  status: z.enum(['Published', 'Not started', 'Under construction', 'In progress']).default('Not started'),
+  comment: z.string().default(''),
+  cover_image: z.string().default(''),
+})
+
+export const PostFrontmatterSchema = z.object({
+  id: z.string(),
+  path: z.string(),
+  type: z.string().default('essay'),
+  intent: z.string().default('reference'),
+  version: z.string().default('1.0'),
+  created: z.string(),
+  last_updated: z.string(),
+  source: PostSourceSchema,
+  meta: PostMetaSchema,
+})
+
+export type PostFrontmatter = z.infer<typeof PostFrontmatterSchema>
+
+export function validateFrontmatter(data: unknown): PostFrontmatter {
+  return PostFrontmatterSchema.parse(data)
+}
+```
+
+### Part B: extractProperties function
+
+Port the property extraction logic from sync-notion.ts (approximately lines 40–95).
+Make it fully typed. Handle all property types present in the existing script:
+
+```typescript
+export interface NotionPageProperties {
+  title: string
+  status: 'Published' | 'Not started' | 'Under construction' | 'In progress'
+  tags: string[]
+  featured: boolean
+  featured_at: string[]
+  language: string
+  cover_image: string    // URL (may be AWS signed, may be stable CDN)
+}
+
+export function extractProperties(page: PageObjectResponse): NotionPageProperties
+```
+
+Logic to port:
+- title: look for properties named 'Name', 'Title', or 'title'; join all rich_text[].plain_text segments
+- status: look for 'Status' or 'status' select property; default 'Not started'
+- tags: look for 'Tags' or 'tags' multi_select; map to .name array
+- featured: look for 'Featured' checkbox property; default false
+- featured_at: look for 'Featured At' multi_select; map to .name array
+- language: look for 'Language' or 'language' select property; default ''
+- cover_image: from page.cover — if type 'external' use .url, if type 'file' use .url; else ''
+
+Use TypeScript discriminated unions for property type narrowing. Do not use `any` casts
+where avoidable — use the @notionhq/client property types.
+
+## File 2: src/adapters/markdown.ts — MarkdownAdapter
+
+```typescript
+import matter from 'gray-matter'
+import * as fs from 'fs'
+import * as path from 'path'
+import type { PostFrontmatter } from '../schema.js'
+
+export class MarkdownAdapter {
+  write(slug: string, frontmatter: PostFrontmatter, content: string, outputDir: string): void
+}
+```
+
+Implementation requirements:
+
+1. Create `outputDir` if it does not exist: `fs.mkdirSync(outputDir, { recursive: true })`
+2. `const outputPath = path.join(outputDir, slug + '.md')`
+3. **Write-once Published pattern** (port from sync-notion.ts lines ~110-125):
+   If the file already exists, read it with `matter(fs.readFileSync(outputPath, 'utf-8'))`.
+   If `existingData.meta?.status === 'Published'`, set `frontmatter.meta.status = 'Published'`.
+4. **Preserve created date** (port from sync-notion.ts lines ~183-192):
+   If the file already exists and the parsed frontmatter has a `created` field, use that value
+   instead of the incoming `frontmatter.created`.
+5. Write with gray-matter stringify:
+   ```typescript
+   const output = matter.stringify(`\n# ${frontmatter.meta.title}\n\n${content}`, frontmatter as any)
+   fs.writeFileSync(outputPath, output, 'utf-8')
+   ```
+
+## File 3: src/adapters/mdx.ts — MdxAdapter
+
+```typescript
+export class MdxAdapter {
+  write(slug: string, frontmatter: PostFrontmatter, content: string, outputDir: string): void
+}
+```
+
+Output file: `{outputDir}/{slug}.mdx`
+
+Do NOT use YAML frontmatter — MDX files use JavaScript exports instead:
+```
+export const meta = {
+  // JSON.stringify(frontmatter, null, 2) content here
+}
+
+# Title
+
+{markdown content body}
+```
+
+The JSON.stringify output goes inside `export const meta = { ... }` on multiple lines.
+Separate the export block from the content with a single blank line.
+
+## File 4: src/adapters/json.ts — JsonAdapter
+
+```typescript
+export class JsonAdapter {
+  write(slug: string, frontmatter: PostFrontmatter, content: string, outputDir: string): void
+}
+```
+
+Output file: `{outputDir}/{slug}.json`
+
+JSON structure:
+```typescript
+{
+  slug: string
+  frontmatter: PostFrontmatter
+  content: string           // raw markdown body (no frontmatter)
+  readingTime: number       // Math.ceil(wordCount / 200) where wordCount = content.split(/\s+/).length
+  generatedAt: string       // new Date().toISOString()
+}
+```
+
+Write with `JSON.stringify(data, null, 2)`.
+
+## File 5: src/pipeline/content.ts — Port content utilities
+
+Copy these three functions VERBATIM from:
+/Users/rashid/Desktop/Workspaces/rashidazarang/lib/content-utils.ts
+
+Functions to copy:
+- `stripMarkdownInline(text: string): string`
+- `extractComment(markdown: string, title: string): string`
+- `detectLanguage(text: string): 'Español' | 'English' | ''`
+
+Do NOT alter any logic. Port any internal helper functions they depend on.
+Export all three from this file.
+
+## TypeScript verification
+
+Run: `cd /Users/rashid/Desktop/notion-x/ && npx tsc --noEmit`
+
+Fix all errors. When exits 0, print STEP_COMPLETE on its own line.
