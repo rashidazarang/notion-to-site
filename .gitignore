@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.ntx-state.json
+*.env
+.env*
+ntx.config.ts
