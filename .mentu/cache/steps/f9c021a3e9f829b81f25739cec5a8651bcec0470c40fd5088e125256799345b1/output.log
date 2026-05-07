@@ -1,0 +1,10 @@
+I'll read the source files first to get the full picture of the config, CLI, and schema.Let me also check the package.json and context file for additional details.Let me check the renderer to confirm all supported block types.Now I have the full picture. Let me create all the documentation files.All files are new. Let me create them all now, plus the issue templates directory.All 6 documentation files created:
+
+- **README.md** -- Full docs with install, quick start, config reference table, CLI commands table, output format sample, framework guides (Next.js, Astro, SvelteKit), and how-it-works section.
+- **CONTRIBUTING.md** -- Setup, local dev workflow, project structure, PR guidelines.
+- **LICENSE** -- MIT, Copyright 2026 Rashid Azarang.
+- **CHANGELOG.md** -- v0.1.0 entry with all features listed.
+- **.github/ISSUE_TEMPLATE/bug_report.md** -- Description, repro steps, expected/actual, environment.
+- **.github/ISSUE_TEMPLATE/feature_request.md** -- Problem, proposed solution, alternatives.
+
+STEP_COMPLETE

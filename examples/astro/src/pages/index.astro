@@ -1,0 +1,38 @@
+---
+import { getCollection } from 'astro:content'
+
+const posts = (await getCollection('blog')).sort(
+  (a, b) => (b.data.created || '').localeCompare(a.data.created || '')
+)
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>My Site</title>
+  </head>
+  <body style="max-width: 720px; margin: 0 auto; padding: 2rem 1rem; font-family: system-ui, sans-serif;">
+    <nav style="margin-bottom: 2rem; border-bottom: 1px solid #eee; padding-bottom: 1rem;">
+      <a href="/" style="font-size: 1.25rem; font-weight: 600; text-decoration: none; color: inherit;">My Site</a>
+    </nav>
+    <h1>Posts</h1>
+    {posts.length === 0 ? (
+      <p>No posts yet. Run <code>npm run sync</code> to pull content from Notion.</p>
+    ) : (
+      <ul style="list-style: none; padding: 0;">
+        {posts.map((post) => (
+          <li style="margin-bottom: 1.5rem;">
+            <a href={`/blog/${post.slug}`} style="font-size: 1.125rem; font-weight: 500;">
+              {post.data.title}
+            </a>
+            <div style="font-size: 0.875rem; color: #666; margin-top: 0.25rem;">
+              {post.data.created && <span>{post.data.created}</span>}
+              {post.data.main_tag && <span> &middot; {post.data.main_tag}</span>}
+            </div>
+          </li>
+        ))}
+      </ul>
+    )}
+  </body>
+</html>

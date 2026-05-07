@@ -1,0 +1,37 @@
+---
+import { getCollection } from 'astro:content'
+
+export async function getStaticPaths() {
+  const posts = await getCollection('blog')
+  return posts.map((post) => ({
+    params: { slug: post.slug },
+    props: { post },
+  }))
+}
+
+const { post } = Astro.props
+const { Content } = await post.render()
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{post.data.title}</title>
+  </head>
+  <body style="max-width: 720px; margin: 0 auto; padding: 2rem 1rem; font-family: system-ui, sans-serif;">
+    <nav style="margin-bottom: 2rem; border-bottom: 1px solid #eee; padding-bottom: 1rem;">
+      <a href="/" style="font-size: 1.25rem; font-weight: 600; text-decoration: none; color: inherit;">My Site</a>
+    </nav>
+    <article>
+      <header style="margin-bottom: 2rem;">
+        <h1>{post.data.title}</h1>
+        <div style="font-size: 0.875rem; color: #666;">
+          {post.data.created && <span>{post.data.created}</span>}
+          {post.data.main_tag && <span> &middot; {post.data.main_tag}</span>}
+        </div>
+      </header>
+      <Content />
+    </article>
+  </body>
+</html>

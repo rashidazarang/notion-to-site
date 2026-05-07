@@ -1,11 +1,11 @@
 # Session Handoff
 
-_Generated: 2026-05-07T03:02:10Z | Sequence: nts-oss_
+_Generated: 2026-05-07T03:04:11Z | Sequence: nts-oss_
 
 ## Git Context
 
 - **Branch:** main
-- **HEAD:** cb06a1325a52beb54e50508a76331666cdc04046 chore: auto-commit after step nts-generalize (nts-oss) [run:run_nts-oss_1778122401] [cmt:cmt_run_nts-oss_1778122401]
+- **HEAD:** 9a0879e04c9b53d6a865dc276342c86251967c0d chore: auto-commit after step nts-docs (nts-oss) [run:run_nts-oss_1778122401] [cmt:cmt_run_nts-oss_1778122401]
 
 ## Step Results
 
@@ -13,6 +13,7 @@ _Generated: 2026-05-07T03:02:10Z | Sequence: nts-oss_
 |------|--------|----------|------|
 | nts-audit | OK | 238s | $1.12 |
 | nts-generalize | OK | 264s | $1.27 |
+| nts-docs | OK | 112s | $0.39 |
 
 ## CONTEXT Phases
 
@@ -25,17 +26,20 @@ _Generated: 2026-05-07T03:02:10Z | Sequence: nts-oss_
 ## Recent Changes
 
 ```
-.gitignore                                         |   4 +
- .mentu/.mentu-sysctx-25337E42                      |  30 ++
- .mentu/agent/handoff.md                            | 272 ++++++++++++
- .../output.log                                     |  11 +
+.github/ISSUE_TEMPLATE/bug_report.md               |  30 ++
+ .github/ISSUE_TEMPLATE/feature_request.md          |  17 +
+ .mentu/.mentu-sysctx-D2D7CB70                      |  30 ++
+ .mentu/agent/handoff.md                            | 107 ++---
+ .../output.log                                     |  26 ++
  .../status.json                                    |  15 +
- ntx.config.example.ts => nts.config.example.ts     |   8 +-
+ CHANGELOG.md                                       |  20 +
+ CONTRIBUTING.md                                    |  74 ++++
+ LICENSE                                            |  21 +
+ README.md                                          | 175 ++++++++
  package-lock.json                                  |  13 +
  package.json                                       |  21 +-
  src/adapters/markdown.ts                           |   5 +-
  src/cli.ts                                         | 488 +++++++++++++++------
- src/config.ts                                      |  26 +-
  src/core/renderer.ts                               | 159 ++++++-
  src/schema.ts                                      | 171 ++++++--
  src/types.ts                                       |  10 +
@@ -216,60 +220,60 @@ _Generated: 2026-05-07T03:02:10Z | Sequence: nts-oss_
  test-output/why-geniuses-ignore-the-rules.md       |   2 +-
  .../why-your-ai-agent-sucks-at-front-end.md        |   2 +-
  test-output/yoga-chipinque.md                      |   2 +-
- 191 files changed, 1281 insertions(+), 424 deletions(-)
+ 194 files changed, 1391 insertions(+), 463 deletions(-)
 ```
 
-## Next Step: nts-docs
+## Next Step: nts-examples
 
 ```
 MAX_THINKING_TOKENS=63999
 
-# Step: nts-docs
+# Step: nts-examples
 
-Write all open-source documentation for notion-to-site. Simple language, no em-dashes, no fluff.
+Create two minimal starter examples for notion-to-site.
 
 Working directory: /Users/rashid/Desktop/notion-x/
 
-Read these files before writing:
-- src/types.ts (NtxConfig interface)
-- src/cli.ts (all commands and flags)
-- src/schema.ts (PostFrontmatter shape)
-- nts.config.example.ts (example config)
+These go in examples/ directory. Each example must be self-contained, runnable, and copy-paste ready.
+Do not run npm install for these -- just create the files.
 
-## Files to create
+---
 
-### README.md
+## examples/nextjs/
 
-Structure:
-1. One-line description: "Sync any Notion database to local markdown, MDX, or JSON files."
-2. What it does (3 bullet points, plain English)
-3. Install: `npm install -g notion-to-site`
-4. Quick start (4 steps: create integration, share DB, create config, run sync)
-5. Config reference (table: field, type, default, description) -- cover all NtxConfig fields
-6. CLI commands table (nts init, nts sync, nts sync --incremental, nts watch, nts validate, nts status)
-7. Output format -- show a sample frontmatter block (YAML) with all fields explained
-8. Framework guides -- short paragraph each: Next.js, Astro, SvelteKit (just read the files, don't build)
-9. How it works (3 sentences: fetches pages, renders all block types, writes files)
-10. License: MIT
+A minimal Next.js App Router site that reads content synced by nts.
 
-Rules:
-- No em-dashes (use commas or periods instead)
-- No phrases like "seamlessly", "powerful", "robust", "effortless"
-- Short sentences. Active voice.
-- Code blocks for all commands and config snippets
-- No badges yet (those go in after the repo has activity)
+### Files to create:
 
-### CONTRIBUTING.md
+**examples/nextjs/package.json**
+- name: "nts-example-nextjs"
+- next 14, react 18, react-dom 18, gray-matter, geist
+- scripts: dev, build, start, sync (nts sync), sync:incremental (nts sync --incremental)
+- devDependencies: notion-to-site, typescript, @types/node, @types/react
 
-Keep it short:
-- Prerequisites (Node 18+, TypeScript)
-- Clone and install
-- How to run against a real Notion DB (set NOTION_API_KEY, create nts.config.js)
-- npm run build, node dist/cli.js sync
-- PR guidelines: one thing per PR, describe what changed and why
+**examples/nextjs/nts.config.js**
+```js
+export default {
+  database: process.env.NOTION_DATABASE_ID,
+  output: './content',
+  adapter: 'markdown',
+  images: { download: false, outputDir: './public/images', format: 'webp', quality: 80 },
+  schema: { strict: false },
+  sync: { concurrency: 5, deletions: true },
+  content: { stripBackLinks: true },
+}
+```
 
-### LICENSE
+**examples/nextjs/.env.example**
+```
+NOTION_API_KEY=secret_...
+NOTION_DATABASE_ID=your_database_id_here
+```
 
-MIT license. Copyright 2026 Rashid Azarang.
+**examples/nextjs/app/layout.tsx**
+Minimal layout: html/body, Geist font, a simple nav with site title from env or "My Site".
 
+**examples/nextjs/app/page.tsx**
+Homepage: reads all .md files from content/, displays list of posts with title, date, tag.
+Uses gray-matter to parse frontmatter. Links to /posts/[slug].
 ```
