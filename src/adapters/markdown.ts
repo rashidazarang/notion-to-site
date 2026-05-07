@@ -19,7 +19,10 @@ export class MarkdownAdapter {
       }
     }
 
-    const output = matter.stringify(`\n# ${frontmatter.meta.title}\n\n${content}`, frontmatter as any)
+    // Only inject title heading if the content doesn't already open with one
+    const hasH1 = /^#\s/.test(content.trimStart())
+    const body = hasH1 ? `\n${content}` : `\n# ${frontmatter.meta.title}\n\n${content}`
+    const output = matter.stringify(body, frontmatter as any)
     fs.writeFileSync(outputPath, output, 'utf-8')
   }
 }

@@ -1,5 +1,6 @@
 node_modules/
 dist/
+.nts-state.json
 .ntx-state.json
 *.env
 .env*
@@ -8,3 +9,6 @@ nts.config.js
 ntx.config.ts
 ntx.config.js
 test-output/
+references/
+.mentu/
+.DS_Store

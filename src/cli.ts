@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+import dotenv from 'dotenv'
+dotenv.config()
+dotenv.config({ path: '.env.local', override: true })
+
 import { Command } from 'commander'
 import chalk from 'chalk'
 import ora from 'ora'
@@ -17,23 +21,167 @@ import { extractProperties, PostFrontmatterSchema, validateFrontmatter } from '.
 import type { PostFrontmatter } from './schema.js'
 import { detectLanguage, extractComment } from './pipeline/content.js'
 
+// ── Slug ──────────────────────────────────────────────────────────────────────
+
 function slugify(title: string): string {
   return title
     .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')  // strip diacritics
     .replace(/[^a-z0-9\s-]/g, '')
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-')
     .trim()
+    .replace(/^-+|-+$/g, '')
 }
+
+// ── Image resolution ──────────────────────────────────────────────────────────
 
 async function resolveImagePlaceholders(
   content: string,
-  _slug: string,
-  _imageDir: string,
-  _quality: number = 80,
+  slug: string,
+  imageDir: string,
+  quality: number = 80,
+  download: boolean = false,
 ): Promise<string> {
-  return content.replace(/!\[image\]\(notion:[^)]+\)/g, '')
+  const { processImage } = await import('./pipeline/images.js')
+  const placeholderRe = /!\[([^\]]*)\]\(ntx-img:[^:]+:([^)]+)\)/g
+
+  const matches = [...content.matchAll(placeholderRe)]
+  if (matches.length === 0) return content
+
+  let out = content
+  for (const m of matches) {
+    const caption = m[1]
+    const rawUrl = decodeURIComponent(m[2])
+    if (download) {
+      try {
+        const result = await processImage({ url: rawUrl, slug, outputDir: imageDir, quality })
+        out = out.replace(m[0], `![${caption}](${result.urlPath})`)
+      } catch {
+        out = out.replace(m[0], '')
+      }
+    } else {
+      try {
+        const u = new URL(rawUrl)
+        const cleanUrl = u.origin + u.pathname
+        out = out.replace(m[0], `![${caption}](${cleanUrl})`)
+      } catch {
+        out = out.replace(m[0], '')
+      }
+    }
+  }
+  return out
 }
+
+// ── Internal link resolution ──────────────────────────────────────────────────
+
+function resolveNotionLinks(content: string, slugMap: Map<string, string>, linkPrefix: string): string {
+  return content.replace(/\(\/([a-f0-9-]{32,36})([^)]*)\)/g, (_match, pageId, rest) => {
+    const hexId = pageId.replace(/-/g, '')
+    const slug = slugMap.get(hexId) ?? slugMap.get(pageId)
+    if (slug) return `(${linkPrefix}/${slug}${rest})`
+    return `(${linkPrefix}/${hexId}${rest})`
+  })
+}
+
+// ── Back-link stripping ───────────────────────────────────────────────────────
+
+// Matches any line that is purely a back-navigation element containing ← ↩ ◀
+function isBackLink(line: string): boolean {
+  const s = line.trim()
+  // Heading with arrow (e.g. ### [← Back...](url))
+  if (/^#{1,6}\s/.test(s) && /[←↩◀]/.test(s)) return true
+  // Bold-only back text: **← Go back**
+  if (/^\*{1,3}[←↩◀]/.test(s)) return true
+  // Link with arrow: [**← ...**](url) or [← ...](url), possibly followed by another link fragment
+  if (/^\[[\*_]*[←↩◀]/.test(s)) return true
+  return false
+}
+
+function stripBackLinks(content: string): string {
+  return content
+    .split('\n')
+    .filter(line => !isBackLink(line))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+// ── TOC generation ────────────────────────────────────────────────────────────
+
+function generateToc(content: string): string {
+  const headings = content
+    .split('\n')
+    .filter(l => /^#{2,4}\s/.test(l))
+  if (headings.length < 3) return ''
+
+  const items = headings.map(h => {
+    const m = h.match(/^(#{2,4})\s+(.+)$/)
+    if (!m) return null
+    const level = m[1].length - 2
+    const text = m[2].replace(/\*\*?|__?/g, '').trim()
+    const anchor = text.toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-')
+    return `${'  '.repeat(level)}- [${text}](#${anchor})`
+  }).filter(Boolean)
+
+  if (items.length === 0) return ''
+  return `## Contents\n\n${items.join('\n')}\n\n`
+}
+
+// ── Content helpers ───────────────────────────────────────────────────────────
+
+function extractDescription(content: string): string {
+  for (const line of content.split('\n')) {
+    const s = line.trim()
+    if (!s || s.startsWith('#') || s.startsWith('!') || s.startsWith('>') ||
+        s.startsWith('[') || s.startsWith('|') || s.startsWith('<')) continue
+    const plain = s
+      .replace(/\*\*?([^*]+)\*\*?/g, '$1')
+      .replace(/`[^`]+`/g, '')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .trim()
+    if (plain.length > 20) return plain.slice(0, 280)
+  }
+  return ''
+}
+
+function computeReadingTime(content: string): number {
+  const words = content.trim().split(/\s+/).length
+  return Math.max(1, Math.ceil(words / 200))
+}
+
+function computeWordCount(content: string): number {
+  return content.trim().split(/\s+/).filter(Boolean).length
+}
+
+// ── Parallel limiter ─────────────────────────────────────────────────────────
+
+function makeLimiter(concurrency: number) {
+  let running = 0
+  const queue: (() => void)[] = []
+
+  function next() {
+    if (running >= concurrency || queue.length === 0) return
+    running++
+    const fn = queue.shift()!
+    fn()
+  }
+
+  return function limit<T>(fn: () => Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      queue.push(() => {
+        fn()
+          .then(resolve)
+          .catch(reject)
+          .finally(() => { running--; next() })
+      })
+      next()
+    })
+  }
+}
+
+// ── Sync ──────────────────────────────────────────────────────────────────────
 
 async function runSync(opts: { incremental?: boolean; db?: string }): Promise<void> {
   const config = await loadConfig()
@@ -41,6 +189,13 @@ async function runSync(opts: { incremental?: boolean; db?: string }): Promise<vo
   const state = loadState(outputDir)
   const client = new NotionClient()
   const renderer = new NtxRenderer(client)
+
+  const concurrency = config.sync?.concurrency ?? 5
+  const doDeletions = config.sync?.deletions ?? true
+  const doToc = config.content?.toc ?? false
+  const doStrip = config.content?.stripBackLinks ?? true
+  const configAuthor = config.author ?? ''
+  const linkPrefix = config.linkPrefix ?? '/blog'
 
   const adapter =
     config.adapter === 'mdx'
@@ -50,112 +205,199 @@ async function runSync(opts: { incremental?: boolean; db?: string }): Promise<vo
         : new MarkdownAdapter()
 
   const databaseId = opts.db ?? config.database
-  let synced = 0
-  let skipped = 0
-  const startTime = Date.now()
+
+  // ── Pass 1: collect all pages + build slugMap ────────────────────────────
+  console.log(chalk.gray('Fetching page list…'))
+  const allPages: { page: any; slug: string }[] = []
 
   for await (const page of client.paginateDatabase(databaseId)) {
     const props = extractProperties(page)
     if (!props.title) continue
-
-    const slug = slugify(props.title)
-    if (!slug) continue
-
-    if (opts.incremental && !needsUpdate(state, page.id, page.last_edited_time)) {
-      skipped++
-      continue
-    }
-
-    const spinner = ora(`Syncing ${slug}...`).start()
-
-    try {
-      let content = await renderer.renderPage(page.id)
-
-      if (config.images.download) {
-        const imageDir = path.resolve(config.images.outputDir)
-        content = await resolveImagePlaceholders(content, slug, imageDir, config.images.quality)
-      }
-
-      const language = props.language || detectLanguage(content)
-      const comment = extractComment(content, props.title)
-
-      const today = new Date().toISOString().split('T')[0]
-      const frontmatter: PostFrontmatter = {
-        id: slug,
-        path: `/blog/${slug}.md`,
-        type: 'essay',
-        intent: 'reference',
-        version: '1.0',
-        created: today,
-        last_updated: today,
-        source: { platform: 'notion', page_id: page.id },
-        meta: {
-          title: props.title,
-          author: 'Rashid Azarang',
-          category: [],
-          main_tag: null,
-          tags: props.tags,
-          featured: props.featured,
-          featured_at: props.featured_at,
-          language,
-          post_type: 'Post',
-          status: props.status,
-          comment,
-          cover_image: props.cover_image,
-        },
-      }
-
-      if (config.schema.strict) {
-        validateFrontmatter(frontmatter)
-      }
-
-      adapter.write(slug, frontmatter, content, outputDir)
-
-      const newState = updatePageState(state, {
-        pageId: page.id,
-        slug,
-        lastEditedTime: page.last_edited_time,
-        outputPath: path.join(outputDir, slug + '.md'),
-        imageHashes: {},
-      })
-      Object.assign(state, newState)
-
-      spinner.succeed(chalk.green(`✓ ${slug}`))
-      synced++
-    } catch (err: any) {
-      spinner.fail(chalk.red(`✗ ${slug}: ${err.message}`))
-    }
+    // Prefer Notion slug property, fall back to slugified title
+    const slug = props.slug ?? slugify(props.title)
+    if (slug) allPages.push({ page, slug })
   }
 
-  if (!opts.incremental) {
+  // Build pageId → slug map (both dashed and hex forms)
+  const slugMap = new Map<string, string>()
+  for (const { page, slug } of allPages) {
+    slugMap.set(page.id, slug)
+    slugMap.set(page.id.replace(/-/g, ''), slug)
+  }
+  // Give renderer access for link_to_page transformer
+  renderer.slugMap = slugMap
+  renderer.linkPrefix = linkPrefix
+
+  console.log(chalk.gray(`Found ${allPages.length} pages. Syncing with concurrency=${concurrency}…`))
+
+  // ── Pass 2: sync each page (parallel) ───────────────────────────────────
+  const limit = makeLimiter(concurrency)
+  const seenSlugs = new Set<string>()
+  let synced = 0
+  let skipped = 0
+  const startTime = Date.now()
+
+  const tasks = allPages.map(({ page, slug }) =>
+    limit(async () => {
+      seenSlugs.add(slug)
+
+      if (opts.incremental && !needsUpdate(state, page.id, page.last_edited_time)) {
+        skipped++
+        return
+      }
+
+      const spinner = ora({ text: `Syncing ${slug}…`, isSilent: concurrency > 1 }).start()
+
+      try {
+        let content = await renderer.renderPage(page.id)
+
+        // Image resolution
+        content = await resolveImagePlaceholders(
+          content, slug,
+          path.resolve(config.images.outputDir),
+          config.images.quality ?? 80,
+          config.images.download,
+        )
+
+        // Internal link resolution
+        content = resolveNotionLinks(content, slugMap, linkPrefix)
+
+        // Strip Notion back-navigation links
+        if (doStrip) content = stripBackLinks(content)
+
+        // TOC injection
+        if (doToc) {
+          const toc = generateToc(content)
+          if (toc) {
+            // Insert after first heading
+            const firstH = content.indexOf('\n## ')
+            if (firstH !== -1) {
+              content = content.slice(0, firstH + 1) + toc + content.slice(firstH + 1)
+            }
+          }
+        }
+
+        // Property extraction
+        const props = extractProperties(page)
+        const language = props.language || detectLanguage(content)
+        const comment = extractComment(content, props.title)
+        const description = props.description || extractDescription(content)
+        const reading_time = computeReadingTime(content)
+        const word_count = computeWordCount(content)
+        const author = props.author || configAuthor
+
+        const createdDate = page.created_time.split('T')[0]
+        const lastEditedDate = page.last_edited_time.split('T')[0]
+
+        const frontmatter: PostFrontmatter = {
+          id: slug,
+          path: `/${config.output.replace(/^\.\//, '')}/${slug}.md`,
+          type: props.post_type?.toLowerCase() || 'post',
+          intent: '',
+          version: '1.0',
+          created: createdDate,
+          last_updated: lastEditedDate,
+          source: { platform: 'notion', page_id: page.id },
+          meta: {
+            title: props.title,
+            seo_title: props.seo_title || props.title,
+            author,
+            description,
+            canonical: props.canonical,
+            category: props.category,
+            main_tag: props.main_tag,
+            tags: props.tags,
+            featured: props.featured,
+            featured_at: props.featured_at,
+            language,
+            post_type: props.post_type,
+            status: props.status,
+            reading_time,
+            word_count,
+            comment,
+            cover_image: props.cover_image,
+          },
+        }
+
+        if (config.schema.strict) validateFrontmatter(frontmatter)
+
+        adapter.write(slug, frontmatter, content, outputDir)
+
+        const newState = updatePageState(state, {
+          pageId: page.id,
+          slug,
+          lastEditedTime: page.last_edited_time,
+          outputPath: path.join(outputDir, slug + '.md'),
+          imageHashes: {},
+        })
+        Object.assign(state, newState)
+
+        spinner.succeed(chalk.green(`✓ ${slug}`))
+        synced++
+      } catch (err: any) {
+        spinner.fail(chalk.red(`✗ ${slug}: ${err.message}`))
+      }
+    })
+  )
+
+  await Promise.all(tasks)
+
+  // ── Deletion sync ────────────────────────────────────────────────────────
+  if (!opts.incremental && doDeletions) {
+    const ext = config.adapter === 'mdx' ? '.mdx' : config.adapter === 'json' ? '.json' : '.md'
+    const existingFiles = fs.existsSync(outputDir)
+      ? fs.readdirSync(outputDir).filter(f => f.endsWith(ext))
+      : []
+    let deleted = 0
+    for (const file of existingFiles) {
+      const fileSlug = file.replace(ext, '')
+      if (!seenSlugs.has(fileSlug)) {
+        fs.unlinkSync(path.join(outputDir, file))
+        deleted++
+      }
+    }
+    if (deleted > 0) console.log(chalk.yellow(`Deleted ${deleted} orphaned file(s)`))
     state.lastFullSync = new Date().toISOString()
   }
+
   saveState(outputDir, state)
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
   console.log(chalk.blue(`\nSynced ${synced} pages (${skipped} skipped) in ${elapsed}s`))
 }
 
+// ── CLI ───────────────────────────────────────────────────────────────────────
+
 const program = new Command()
 program
-  .name('ntx')
-  .description('Notion to X — sync any Notion database to local content files')
+  .name('nts')
+  .description('Notion to Site — sync any Notion database to local content files')
   .version('0.1.0')
 
 program
   .command('init')
-  .description('Create ntx.config.ts in the current directory')
+  .description('Create nts.config.js in the current directory')
   .action(async () => {
-    const target = path.join(process.cwd(), 'ntx.config.ts')
+    const target = path.join(process.cwd(), 'nts.config.js')
     if (fs.existsSync(target)) {
-      console.error(chalk.red('ntx.config.ts already exists. Delete it first to reinitialize.'))
+      console.error(chalk.red('nts.config.js already exists. Delete it first to reinitialize.'))
       process.exit(1)
     }
-
-    const templatePath = '/Users/rashid/Desktop/notion-x/ntx.config.example.ts'
-    const template = fs.readFileSync(templatePath, 'utf-8')
+    const template = `// nts.config.js — edit before running nts sync
+export default {
+  database: 'YOUR_NOTION_DATABASE_ID',
+  output: './content',
+  adapter: 'markdown',
+  author: 'Your Name',
+  linkPrefix: '/blog',
+  images: { download: true, outputDir: './public/images', format: 'webp', quality: 80 },
+  schema: { strict: false },
+  sync: { concurrency: 5, deletions: true },
+  content: { toc: false, stripBackLinks: true },
+}
+`
     fs.writeFileSync(target, template, 'utf-8')
-    console.log(chalk.green('✓ Created ntx.config.ts — edit it before running ntx sync'))
+    console.log(chalk.green('✓ Created nts.config.js — edit it before running nts sync'))
   })
 
 program
@@ -178,24 +420,19 @@ program
   .option('--interval <seconds>', 'Poll interval in seconds', '60')
   .action(async (opts) => {
     const intervalSec = parseInt(opts.interval, 10)
-    console.log(chalk.blue('Watching... (Ctrl+C to stop)'))
-
+    console.log(chalk.blue(`Watching (interval=${intervalSec}s, Ctrl+C to stop)…`))
     const tick = async () => {
-      console.log(chalk.gray(`[${new Date().toISOString()}] Polling...`))
-      try {
-        await runSync({ incremental: true })
-      } catch (err: any) {
-        console.error(chalk.red(`Error: ${err.message}`))
-      }
+      console.log(chalk.gray(`[${new Date().toISOString()}] Polling…`))
+      try { await runSync({ incremental: true }) }
+      catch (err: any) { console.error(chalk.red(`Error: ${err.message}`)) }
     }
-
     await tick()
     setInterval(tick, intervalSec * 1000)
   })
 
 program
   .command('validate')
-  .description('Validate all output files against the Zod schema')
+  .description('Validate all output files against Zod schema')
   .action(async () => {
     const config = await loadConfig()
     const outputDir = path.resolve(config.output)
@@ -206,31 +443,21 @@ program
       process.exit(1)
     }
 
-    const files = fs.readdirSync(outputDir).filter((f) => f.endsWith(ext))
+    const files = fs.readdirSync(outputDir).filter(f => f.endsWith(ext))
     let failures = 0
 
     for (const file of files) {
       const slug = file.replace(ext, '')
-      const fullPath = path.join(outputDir, file)
-      const raw = fs.readFileSync(fullPath, 'utf-8')
+      const raw = fs.readFileSync(path.join(outputDir, file), 'utf-8')
 
       let data: unknown
       if (ext === '.json') {
-        const parsed = JSON.parse(raw) as { frontmatter?: unknown }
-        data = parsed.frontmatter
+        data = (JSON.parse(raw) as any).frontmatter
       } else if (ext === '.mdx') {
         const match = raw.match(/export const meta = (\{[\s\S]*?\n\})/)
-        if (!match) {
-          console.log(chalk.red(`✗ ${slug}: could not find meta export`))
-          failures++
-          continue
-        }
-        try {
-          data = JSON.parse(match[1])
-        } catch (err: any) {
-          console.log(chalk.red(`✗ ${slug}: invalid meta JSON — ${err.message}`))
-          failures++
-          continue
+        if (!match) { console.log(chalk.red(`✗ ${slug}: no meta export`)); failures++; continue }
+        try { data = JSON.parse(match[1]) } catch (e: any) {
+          console.log(chalk.red(`✗ ${slug}: invalid JSON — ${e.message}`)); failures++; continue
         }
       } else {
         data = matter(raw).data
@@ -240,18 +467,13 @@ program
       if (result.success) {
         console.log(chalk.green(`✓ ${slug}`))
       } else {
-        const msg = result.error.issues
-          .map((i) => `${i.path.join('.')}: ${i.message}`)
-          .join('; ')
+        const msg = result.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ')
         console.log(chalk.red(`✗ ${slug}: ${msg}`))
         failures++
       }
     }
 
-    if (failures > 0) {
-      console.error(chalk.red(`\n${failures} file(s) failed validation`))
-      process.exit(1)
-    }
+    if (failures > 0) { console.error(chalk.red(`\n${failures} file(s) failed`)); process.exit(1) }
     console.log(chalk.blue(`\nAll ${files.length} files valid`))
   })
 
@@ -264,43 +486,29 @@ program
     const state = loadState(outputDir)
     const ext = config.adapter === 'mdx' ? '.mdx' : config.adapter === 'json' ? '.json' : '.md'
 
-    console.log(chalk.bold('ntx status'))
-    console.log(`  Output dir:        ${outputDir}`)
-    console.log(`  Last full sync:    ${state.lastFullSync ?? 'never'}`)
-    console.log(`  Tracked pages:     ${Object.keys(state.pages).length}`)
+    console.log(chalk.bold('\nnts status'))
+    console.log(`  Output dir:     ${outputDir}`)
+    console.log(`  Last full sync: ${state.lastFullSync ?? 'never'}`)
+    console.log(`  Tracked pages:  ${Object.keys(state.pages).length}`)
 
-    let published = 0
-    let other = 0
-    let stale = 0
-
+    let published = 0; let other = 0; let stale = 0
     for (const entry of Object.values(state.pages)) {
-      const filePath = path.join(outputDir, entry.slug + ext)
-      if (!fs.existsSync(filePath)) {
-        stale++
-        continue
-      }
-
+      const fp = path.join(outputDir, entry.slug + ext)
+      if (!fs.existsSync(fp)) { stale++; continue }
       try {
-        let data: any
-        const raw = fs.readFileSync(filePath, 'utf-8')
-        if (ext === '.json') {
-          data = JSON.parse(raw).frontmatter
-        } else if (ext === '.mdx') {
-          const match = raw.match(/export const meta = (\{[\s\S]*?\n\})/)
-          data = match ? JSON.parse(match[1]) : {}
-        } else {
-          data = matter(raw).data
-        }
-        if (data?.meta?.status === 'Published') published++
-        else other++
-      } catch {
-        other++
-      }
+        const raw = fs.readFileSync(fp, 'utf-8')
+        const data: any = ext === '.json'
+          ? JSON.parse(raw).frontmatter
+          : ext === '.mdx'
+            ? (() => { const m = raw.match(/export const meta = (\{[\s\S]*?\n\})/); return m ? JSON.parse(m[1]) : {} })()
+            : matter(raw).data
+        if (data?.meta?.status === 'Published') published++; else other++
+      } catch { other++ }
     }
 
-    console.log(`  Published:         ${published}`)
-    console.log(`  Other status:      ${other}`)
-    console.log(`  Stale entries:     ${stale}`)
+    console.log(`  Published:      ${published}`)
+    console.log(`  Other status:   ${other}`)
+    console.log(`  Stale entries:  ${stale}\n`)
   })
 
 program.parse(process.argv)
