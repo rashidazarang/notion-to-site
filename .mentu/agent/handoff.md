@@ -1,17 +1,18 @@
 # Session Handoff
 
-_Generated: 2026-05-07T02:57:36Z | Sequence: nts-oss_
+_Generated: 2026-05-07T03:02:10Z | Sequence: nts-oss_
 
 ## Git Context
 
 - **Branch:** main
-- **HEAD:** 926ac8cf48aea1fa695ec7eb3412d2d230f03a5c chore: auto-commit after step nts-audit (nts-oss) [run:run_nts-oss_1778122401] [cmt:cmt_run_nts-oss_1778122401]
+- **HEAD:** cb06a1325a52beb54e50508a76331666cdc04046 chore: auto-commit after step nts-generalize (nts-oss) [run:run_nts-oss_1778122401] [cmt:cmt_run_nts-oss_1778122401]
 
 ## Step Results
 
 | Step | Status | Duration | Cost |
 |------|--------|----------|------|
 | nts-audit | OK | 238s | $1.12 |
+| nts-generalize | OK | 264s | $1.27 |
 
 ## CONTEXT Phases
 
@@ -24,18 +25,20 @@ _Generated: 2026-05-07T02:57:36Z | Sequence: nts-oss_
 ## Recent Changes
 
 ```
-.mentu/.mentu-sysctx-51710ED8                      |  19 +
- .mentu/ledger.jsonl.lock                           |   0
- AUDIT.md                                           | 155 +++++++
- docs/context/CONTEXT-nts-oss.md                    |  48 ++
- docs/context/CONTEXT-nts-oss.twin.json             |  93 ++++
+.gitignore                                         |   4 +
+ .mentu/.mentu-sysctx-25337E42                      |  30 ++
+ .mentu/agent/handoff.md                            | 272 ++++++++++++
+ .../output.log                                     |  11 +
+ .../status.json                                    |  15 +
+ ntx.config.example.ts => nts.config.example.ts     |   8 +-
  package-lock.json                                  |  13 +
- package.json                                       |   1 +
+ package.json                                       |  21 +-
  src/adapters/markdown.ts                           |   5 +-
- src/cli.ts                                         | 483 +++++++++++++++------
- src/core/renderer.ts                               | 158 ++++++-
- src/schema.ts                                      | 167 +++++--
- src/types.ts                                       |   9 +
+ src/cli.ts                                         | 488 +++++++++++++++------
+ src/config.ts                                      |  26 +-
+ src/core/renderer.ts                               | 159 ++++++-
+ src/schema.ts                                      | 171 ++++++--
+ src/types.ts                                       |  10 +
  test-output/3-niveles-de-sinergia-con-ai.md        |   4 +-
  ...ve-use-of-large-language-models-in-companies.md |   2 +-
  test-output/a-guide-to-my-ideal-partner.md         |   2 +-
@@ -213,60 +216,60 @@ _Generated: 2026-05-07T02:57:36Z | Sequence: nts-oss_
  test-output/why-geniuses-ignore-the-rules.md       |   2 +-
  .../why-your-ai-agent-sucks-at-front-end.md        |   2 +-
  test-output/yoga-chipinque.md                      |   2 +-
- 189 files changed, 1220 insertions(+), 403 deletions(-)
+ 191 files changed, 1281 insertions(+), 424 deletions(-)
 ```
 
-## Next Step: nts-generalize
+## Next Step: nts-docs
 
 ```
 MAX_THINKING_TOKENS=63999
 
-# Step: nts-generalize
+# Step: nts-docs
 
-Read /Users/rashid/Desktop/notion-x/AUDIT.md first. Then generalize the codebase for open-source release.
+Write all open-source documentation for notion-to-site. Simple language, no em-dashes, no fluff.
 
-The package is being renamed: ntx -> notion-to-site, CLI binary: ntx -> nts.
+Working directory: /Users/rashid/Desktop/notion-x/
 
-## Tasks
+Read these files before writing:
+- src/types.ts (NtxConfig interface)
+- src/cli.ts (all commands and flags)
+- src/schema.ts (PostFrontmatter shape)
+- nts.config.example.ts (example config)
 
-### 1. Rename package
-In package.json:
-- name: "notion-to-site"
-- version: "0.1.0"
-- bin: { "nts": "./dist/cli.js" }
-- description: "Sync any Notion database to static markdown, MDX, or JSON files"
-- keywords: ["notion", "cms", "markdown", "mdx", "static-site", "blog", "sync"]
-- author: "Rashid Azarang"
-- license: "MIT"
-- homepage: "https://github.com/rashidazarang/notion-to-site"
-- repository: { "type": "git", "url": "https://github.com/rashidazarang/notion-to-site.git" }
-- bugs: { "url": "https://github.com/rashidazarang/notion-to-site/issues" }
+## Files to create
 
-### 2. Remove all hardcoded personal values
-Fix every item found in AUDIT.md.
+### README.md
 
-Specifically in src/cli.ts:
-- The default author in runSync() must be '' (empty string), not 'Rashid Azarang'
-- Any other personal defaults: remove or make empty
+Structure:
+1. One-line description: "Sync any Notion database to local markdown, MDX, or JSON files."
+2. What it does (3 bullet points, plain English)
+3. Install: `npm install -g notion-to-site`
+4. Quick start (4 steps: create integration, share DB, create config, run sync)
+5. Config reference (table: field, type, default, description) -- cover all NtxConfig fields
+6. CLI commands table (nts init, nts sync, nts sync --incremental, nts watch, nts validate, nts status)
+7. Output format -- show a sample frontmatter block (YAML) with all fields explained
+8. Framework guides -- short paragraph each: Next.js, Astro, SvelteKit (just read the files, don't build)
+9. How it works (3 sentences: fetches pages, renders all block types, writes files)
+10. License: MIT
 
-In ntx.config.example.ts (rename to nts.config.example.ts):
-- database: 'YOUR_NOTION_DATABASE_ID'
-- output: './content'
-- author: 'Your Name'
-- Remove any rashidazarang-specific paths or values
+Rules:
+- No em-dashes (use commas or periods instead)
+- No phrases like "seamlessly", "powerful", "robust", "effortless"
+- Short sentences. Active voice.
+- Code blocks for all commands and config snippets
+- No badges yet (those go in after the repo has activity)
 
-### 3. Rename config file convention
-The config file is currently ntx.config.js/ts. Rename convention to nts.config.js/ts.
-Update loadConfig() in src/config.ts to look for nts.config.js and nts.config.ts (and keep ntx.config.js/ts as fallback for backwards compat).
-Update the init command in src/cli.ts to create nts.config.js.
+### CONTRIBUTING.md
 
-### 4. Update all internal references
-Search all src/ files for "ntx" references:
-- Update any user-facing strings ("ntx sync", "ntx init") to "nts"
-- Update error messages referencing ntx
-- Update the ora spinner text if it says ntx
-- Keep internal variable names (ntxState, etc.) as-is -- only user-visible strings
+Keep it short:
+- Prerequisites (Node 18+, TypeScript)
+- Clone and install
+- How to run against a real Notion DB (set NOTION_API_KEY, create nts.config.js)
+- npm run build, node dist/cli.js sync
+- PR guidelines: one thing per PR, describe what changed and why
 
-### 5. Update .gitignore
-Replace ntx.config.ts with nts.config.ts and nts.config.js.
+### LICENSE
+
+MIT license. Copyright 2026 Rashid Azarang.
+
 ```

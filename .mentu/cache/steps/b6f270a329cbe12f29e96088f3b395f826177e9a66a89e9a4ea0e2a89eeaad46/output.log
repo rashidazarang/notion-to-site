@@ -1,0 +1,26 @@
+I'll read the audit findings first, then systematically generalize the codebase.Now let me read the remaining files I need to modify.Let me check the remaining files for ntx references.Got it — full picture is clear. Let me execute all the changes now. Starting with the parallel edits across all files.Now updating cli.ts — removing personal author, renaming ntx→nts in user-facing strings, using configurable linkPrefix, and removing hardcoded type/intent.Now set the linkPrefix on the renderer and rename all user-facing ntx→nts strings.Now rename all user-facing `ntx` → `nts` strings in cli.ts.Now updating config.ts to look for nts.config first with ntx.config fallback, and updating renderer.ts to use configurable linkPrefix.Now updating .gitignore and renaming the example config file.Now renaming the example config file and updating its contents.Now delete the old example config and build.The Zod output type still requires `type` and `intent`. I need to provide them — just with the generic defaults instead of the opinionated ones.Zero errors. Now verify the CLI help and check for personal data.That's the user's local config file (now gitignored). Let me run the exact verification command from the task.The only match is `ntx.config.js` — the user's local config file, which is now gitignored and won't be in the published package. The source code (`src/`, `dist/`, example config) is clean.
+
+Let me verify the source-only scope is clean.All clean. Let me also verify no stale `ntx` references remain in user-facing strings.Those are the intentional backwards-compatibility fallbacks in `loadConfig`. That's correct.
+
+Let me do a final review of the key changed files to make sure everything is coherent.All changes are in place. Here's a summary of everything done:
+
+**Task 1 — Package renamed:** `ntx` → `notion-to-site`, binary `nts`, full metadata added (author, homepage, repository, bugs).
+
+**Task 2 — Personal values removed:**
+- `'Rashid Azarang'` fallback → `''` (empty string)
+- `69f88a28...` database ID → `'YOUR_NOTION_DATABASE_ID'` in example config
+- `/c/` hardcoded link prefix → configurable `config.linkPrefix` (default `/blog`) in both `cli.ts` and `renderer.ts`
+- Hardcoded `type: 'essay'` → derives from `post_type` property or defaults to `'post'`
+- Hardcoded `intent: 'reference'` → `''` (empty)
+
+**Task 3 — Config file renamed:** `ntx.config.*` → `nts.config.*`. `loadConfig()` checks `nts.config.js` → `nts.config.ts` → `ntx.config.js` → `ntx.config.ts` (backwards compat). Init creates `nts.config.js`.
+
+**Task 4 — User-facing strings:** All CLI output, command descriptions, and program name updated to `nts`.
+
+**Task 5 — .gitignore updated:** Added `nts.config.ts`, `nts.config.js`, `ntx.config.js`, and `test-output/`.
+
+**Task 6 — Build:** Zero TypeScript errors. `node dist/cli.js --help` shows `nts` references correctly.
+
+**Task 7 — Personal data verified:** Zero results in `src/`, `dist/`, and example config.
+
+STEP_COMPLETE

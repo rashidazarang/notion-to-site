@@ -1,0 +1,30 @@
+**Working directory:** `/Users/rashid/Desktop/notion-x` — all file paths in this workspace are relative to this root. Do NOT search other directories.
+
+**MANDATORY:** When you are done, print `STEP_COMPLETE` as the very last line of your response. This is how the engine detects completion.
+
+
+<recipe-run>
+Recipe run ID: run_nts-oss_1778122401
+Include this ID in your mcp_do calls as compoundId for evidence tracking.
+</recipe-run>
+
+
+## Live CIR Patterns
+
+- **cites in cites::runtime-integration** (seen 9x, strength: 95%) — [promoted at 2026-04-03T09:31:10Z] Repeated cites pattern across 9 independent signals in cites::runtime-integration domain
+- **cites in cites::crawlio-ux-pivot** (seen 7x, strength: 95%) — [promoted at 2026-04-03T09:31:10Z] Repeated cites pattern across 7 independent signals in cites::crawlio-ux-pivot domain
+- **cites in cites::spectre-mcp-harden** (seen 11x, strength: 95%) — [promoted at 2026-04-03T09:13:46Z] Repeated cites pattern across 11 independent signals in cites::spectre-mcp-harden domain
+- **cites in cites::spectre-parity-harden** (seen 9x, strength: 95%) — [promoted at 2026-04-03T12:35:04Z] Repeated cites pattern across 9 independent signals in cites::spectre-parity-harden domain
+- **cites in cites::spectre-parity-harden** (seen 12x, strength: 95%) — [promoted at 2026-04-07T12:22:48Z] Repeated cites pattern across 12 independent signals in cites::spectre-parity-harden domain
+
+## Live CIR Evidence
+
+- [2026-05-07T03:01:56Z] iteration 1: 38 turns, $1.2718 (confidence: 90%)
+- [2026-05-07T02:57:24Z] iteration 1: 20 turns, $1.1239 (confidence: 90%)
+- [2026-05-07T02:57:30Z] ings:**
+- 1 hardcoded personal name (`'Rashid Azarang'` fallback at `cli.ts:197`)
+- 1 real database ID in the example config (`ntx.config.example.ts:20`)
+- 2 hardcoded `/c/` URL prefixes that assume a (confidence: 75%)
+
+---
+
