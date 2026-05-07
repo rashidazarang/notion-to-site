@@ -2,6 +2,8 @@ export interface NtxConfig {
   database: string
   output: string
   adapter: 'markdown' | 'mdx' | 'json'
+  author?: string
+  linkPrefix?: string
   images: {
     download: boolean
     outputDir: string
@@ -17,9 +19,11 @@ export interface NtxConfig {
 }
 
 const config: NtxConfig = {
-  database: '69f88a28f7ae4a3ab647d86f54282ab0',
-  output: './blog',
+  database: 'YOUR_NOTION_DATABASE_ID',
+  output: './content',
   adapter: 'markdown',
+  author: 'Your Name',
+  linkPrefix: '/blog',
   images: {
     download: true,
     outputDir: './public/images',

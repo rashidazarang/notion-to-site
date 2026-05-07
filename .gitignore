@@ -3,4 +3,8 @@ dist/
 .ntx-state.json
 *.env
 .env*
+nts.config.ts
+nts.config.js
 ntx.config.ts
+ntx.config.js
+test-output/

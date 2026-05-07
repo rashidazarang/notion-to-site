@@ -5,27 +5,31 @@ import type { NtxConfig } from './types.js'
 
 export async function loadConfig(cwd?: string): Promise<NtxConfig> {
   const dir = cwd ?? process.cwd()
-  const configPath = path.join(dir, 'ntx.config.ts')
 
-  if (!fs.existsSync(configPath) && !fs.existsSync(path.join(dir, 'ntx.config.js'))) {
-    throw new Error(`No ntx.config.ts found in ${dir}. Run \`ntx init\` to create one.`)
+  const candidates = [
+    path.join(dir, 'nts.config.js'),
+    path.join(dir, 'nts.config.ts'),
+    path.join(dir, 'ntx.config.js'),
+    path.join(dir, 'ntx.config.ts'),
+  ]
+
+  const targetPath = candidates.find(p => fs.existsSync(p))
+  if (!targetPath) {
+    throw new Error(`No nts.config.js found in ${dir}. Run \`nts init\` to create one.`)
   }
-
-  const jsConfigPath = path.join(dir, 'ntx.config.js')
-  const targetPath = fs.existsSync(jsConfigPath) ? jsConfigPath : configPath
 
   try {
     const mod = await import(pathToFileURL(targetPath).href)
     const config: NtxConfig = mod.default ?? mod
-    if (!config.database) throw new Error('ntx.config: `database` is required')
-    if (!config.output) throw new Error('ntx.config: `output` is required')
-    if (!config.adapter) throw new Error('ntx.config: `adapter` is required')
+    if (!config.database) throw new Error('nts.config: `database` is required')
+    if (!config.output) throw new Error('nts.config: `output` is required')
+    if (!config.adapter) throw new Error('nts.config: `adapter` is required')
     return config
   } catch (err: any) {
     if (err.code === 'ERR_UNKNOWN_FILE_EXTENSION') {
       throw new Error(
-        'Cannot import ntx.config.ts directly. Either compile it first (tsc), ' +
-          'or rename it to ntx.config.js and use ES module syntax.',
+        'Cannot import .ts config directly. Either compile it first (tsc), ' +
+          'or rename it to nts.config.js and use ES module syntax.',
       )
     }
     throw err
