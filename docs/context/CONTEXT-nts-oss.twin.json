@@ -1,0 +1,93 @@
+{
+  "approval" : null,
+  "created" : "2026-05-07",
+  "id" : "CONTEXT-nts-oss",
+  "last_updated" : "2026-05-07",
+  "phases" : [
+    {
+      "content_hash" : null,
+      "decisions" : [
+
+      ],
+      "evidence_refs" : [
+
+      ],
+      "intent" : "",
+      "label" : "nts-audit",
+      "number" : 1,
+      "outcome" : null,
+      "status" : "pending",
+      "updated_at" : null,
+      "updated_by" : null
+    },
+    {
+      "content_hash" : null,
+      "decisions" : [
+
+      ],
+      "evidence_refs" : [
+
+      ],
+      "intent" : "",
+      "label" : "nts-generalize",
+      "number" : 2,
+      "outcome" : null,
+      "status" : "pending",
+      "updated_at" : null,
+      "updated_by" : null
+    },
+    {
+      "content_hash" : null,
+      "decisions" : [
+
+      ],
+      "evidence_refs" : [
+
+      ],
+      "intent" : "",
+      "label" : "nts-docs",
+      "number" : 3,
+      "outcome" : null,
+      "status" : "pending",
+      "updated_at" : null,
+      "updated_by" : null
+    },
+    {
+      "content_hash" : null,
+      "decisions" : [
+
+      ],
+      "evidence_refs" : [
+
+      ],
+      "intent" : "",
+      "label" : "nts-examples",
+      "number" : 4,
+      "outcome" : null,
+      "status" : "pending",
+      "updated_at" : null,
+      "updated_by" : null
+    },
+    {
+      "content_hash" : null,
+      "decisions" : [
+
+      ],
+      "evidence_refs" : [
+
+      ],
+      "intent" : "",
+      "label" : "nts-publish",
+      "number" : 5,
+      "outcome" : null,
+      "status" : "pending",
+      "updated_at" : null,
+      "updated_by" : null
+    }
+  ],
+  "sequence" : "nts-oss",
+  "training_pairs" : [
+
+  ],
+  "workspace" : "notion-x"
+}
