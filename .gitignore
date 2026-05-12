@@ -12,3 +12,7 @@ test-output/
 references/
 .mentu/
 .DS_Store
+
+# Internal scaffolding + dev-test artifacts (not for the public repo)
+SCAFFOLD.done
+RESULT.md
