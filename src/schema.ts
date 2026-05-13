@@ -26,6 +26,7 @@ const PostMetaSchema = z.object({
   word_count: z.number().int().min(0).default(0),
   comment: z.string().default(''),
   cover_image: z.string().default(''),
+  domain_tags: z.array(z.string()).default([]),
 })
 
 export const PostFrontmatterSchema = z.object({
@@ -62,6 +63,7 @@ export interface NotionPageProperties {
   category: string[]
   main_tag: string | null
   post_type: string
+  domain_tags: string[]
 }
 
 type PageProperty = PageObjectResponse['properties'][string]
@@ -210,8 +212,16 @@ export function extractProperties(page: PageObjectResponse): NotionPagePropertie
     else if (cover.type === 'file') cover_image = cover.file.url
   }
 
+  // Domain Tags — per-page routing across multi-surface sites
+  let domain_tags: string[] = []
+  const domainTagsProp = findProperty(props, ['Domain Tags', 'domain_tags', 'Domain tags', 'Domains', 'Surfaces'])
+  if (domainTagsProp?.type === 'multi_select') {
+    domain_tags = domainTagsProp.multi_select.map((t: any) => t.name)
+  }
+
   return {
     title, slug, status, tags, main_tag, category, featured, featured_at,
     language, cover_image, author, description, seo_title, canonical, post_type,
+    domain_tags,
   }
 }

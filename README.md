@@ -73,6 +73,46 @@ Your content files will appear in `./content`.
 | `content.toc` | `boolean` | `false` | Insert a table of contents after the first heading |
 | `content.stripBackLinks` | `boolean` | `true` | Remove back-navigation links from Notion pages |
 | `watch.interval` | `number` | `60` | Polling interval in seconds for `nts watch` |
+| `query.filter` | `NtxQueryFilter` | none | Sync only pages matching a Notion filter (see below) |
+| `query.page_size` | `number` | `100` | Page size for the database query (max 100) |
+
+### Filtering at sync time
+
+To sync only a subset of a database, pass a Notion-shaped `filter` object. This forwards as-is to Notion's `databases.query` endpoint, so the [full filter syntax](https://developers.notion.com/reference/post-database-query-filter) is supported.
+
+```js
+// nts.config.js — sync only pages tagged "tudatsu" on a "Domain Tags" multi-select
+export default {
+  database: 'YOUR_DB_ID',
+  output: './content',
+  adapter: 'markdown',
+  images: { /* ... */ },
+  schema: { /* ... */ },
+  query: {
+    filter: {
+      property: 'Domain Tags',
+      multi_select: { contains: 'tudatsu' },
+    },
+  },
+}
+```
+
+You can compose filters with `and` / `or`:
+
+```js
+query: {
+  filter: {
+    and: [
+      { property: 'Status', select: { equals: 'Published' } },
+      { property: 'Domain Tags', multi_select: { contains: 'tudatsu' } },
+    ],
+  },
+}
+```
+
+### Domain Tags
+
+If your database has a `Domain Tags` multi-select column, its values are written to `meta.domain_tags` on every synced page — useful when one Notion database feeds multiple sites and you want render-time per-page routing in addition to (or instead of) sync-time filtering.
 
 ## CLI commands
 
@@ -124,6 +164,7 @@ meta:
   word_count: 812
   comment: ""
   cover_image: ""
+  domain_tags: []
 ---
 
 # My First Post

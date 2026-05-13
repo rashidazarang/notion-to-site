@@ -207,10 +207,17 @@ async function runSync(opts: { incremental?: boolean; db?: string }): Promise<vo
   const databaseId = opts.db ?? config.database
 
   // ── Pass 1: collect all pages + build slugMap ────────────────────────────
-  console.log(chalk.gray('Fetching page list…'))
+  const queryOpts = config.query
+    ? { filter: config.query.filter, pageSize: config.query.page_size }
+    : undefined
+  if (queryOpts?.filter) {
+    console.log(chalk.gray(`Fetching page list with filter…`))
+  } else {
+    console.log(chalk.gray('Fetching page list…'))
+  }
   const allPages: { page: any; slug: string }[] = []
 
-  for await (const page of client.paginateDatabase(databaseId)) {
+  for await (const page of client.paginateDatabase(databaseId, queryOpts)) {
     const props = extractProperties(page)
     if (!props.title) continue
     // Prefer Notion slug property, fall back to slugified title
@@ -316,6 +323,7 @@ async function runSync(opts: { incremental?: boolean; db?: string }): Promise<vo
             word_count,
             comment,
             cover_image: props.cover_image,
+            domain_tags: props.domain_tags,
           },
         }
 

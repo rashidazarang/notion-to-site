@@ -1,5 +1,11 @@
 import { Client, isFullPage } from '@notionhq/client'
 import type { PageObjectResponse } from '@notionhq/client'
+import type { NtxQueryFilter } from '../types.js'
+
+export interface QueryOptions {
+  filter?: NtxQueryFilter
+  pageSize?: number
+}
 
 export class NotionClient {
   public readonly notion: Client
@@ -14,14 +20,17 @@ export class NotionClient {
     this.notion = new Client({ auth: apiKey, notionVersion: '2022-06-28' })
   }
 
-  async queryDatabase(databaseId: string, startCursor?: string) {
+  async queryDatabase(databaseId: string, startCursor?: string, options?: QueryOptions) {
+    const body: Record<string, unknown> = {
+      start_cursor: startCursor,
+      page_size: options?.pageSize ?? 100,
+    }
+    if (options?.filter) body.filter = options.filter
+
     const response = await (this.notion as any).request({
       path: `databases/${databaseId}/query`,
       method: 'POST',
-      body: {
-        start_cursor: startCursor,
-        page_size: 100,
-      },
+      body,
     })
     const results = (response.results as any[]).filter(isFullPage) as PageObjectResponse[]
     return {
@@ -31,10 +40,10 @@ export class NotionClient {
     }
   }
 
-  async *paginateDatabase(databaseId: string): AsyncGenerator<PageObjectResponse> {
+  async *paginateDatabase(databaseId: string, options?: QueryOptions): AsyncGenerator<PageObjectResponse> {
     let startCursor: string | undefined
     do {
-      const { results, hasMore, nextCursor } = await this.queryDatabase(databaseId, startCursor)
+      const { results, hasMore, nextCursor } = await this.queryDatabase(databaseId, startCursor, options)
       for (const page of results) {
         yield page
       }
