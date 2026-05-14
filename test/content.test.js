@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 
 import {
   slugify,
+  uniquifySlug,
   resolveNotionLinks,
   stripBackLinks,
   generateToc,
@@ -29,6 +30,24 @@ test('slugify: drops special characters and edge hyphens', () => {
   assert.equal(slugify('--Leading-and-Trailing--'), 'leading-and-trailing')
   assert.equal(slugify('  trim me  '), 'trim-me')
   assert.equal(slugify(''), '')
+})
+
+test('uniquifySlug: returns the slug unchanged when it is unused', () => {
+  assert.equal(uniquifySlug('my-post', new Set()), 'my-post')
+  assert.equal(uniquifySlug('my-post', new Set(['other'])), 'my-post')
+})
+
+test('uniquifySlug: suffixes -2, -3, … on collision', () => {
+  const used = new Set(['my-post'])
+  assert.equal(uniquifySlug('my-post', used), 'my-post-2')
+  used.add('my-post-2')
+  assert.equal(uniquifySlug('my-post', used), 'my-post-3')
+})
+
+test('uniquifySlug: does not mutate the used set', () => {
+  const used = new Set(['my-post'])
+  uniquifySlug('my-post', used)
+  assert.equal(used.size, 1)
 })
 
 test('resolveNotionLinks: maps known page ids to slugs', () => {

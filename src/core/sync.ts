@@ -23,6 +23,7 @@ import {
   detectLanguage,
   extractComment,
   slugify,
+  uniquifySlug,
   resolveNotionLinks,
   stripBackLinks,
   generateToc,
@@ -260,6 +261,7 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
   log(queryOpts.filter ? 'Fetching page list with filter…' : 'Fetching page list…')
 
   const allPages: { page: any; slug: string }[] = []
+  const usedSlugs = new Set<string>()
   for await (const page of client.paginateDatabase(databaseId, queryOpts)) {
     let slug: string | null = null
     if (mode === 'typed' && ntsSchema) {
@@ -273,7 +275,12 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
       if (!props.title) continue
       slug = props.slug ?? slugify(props.title)
     }
-    if (slug) allPages.push({ page, slug })
+    if (!slug) continue
+    // Two pages can slugify to the same value — suffix collisions so they
+    // don't silently overwrite each other's output file.
+    slug = uniquifySlug(slug, usedSlugs)
+    usedSlugs.add(slug)
+    allPages.push({ page, slug })
   }
 
   const slugMap = new Map<string, string>()

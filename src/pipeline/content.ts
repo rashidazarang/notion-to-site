@@ -102,6 +102,19 @@ export function slugify(title: string): string {
 }
 
 /**
+ * Returns a slug guaranteed unique within `used`. On collision it suffixes
+ * `-2`, `-3`, … — without this, two pages whose titles slugify to the same
+ * value would overwrite each other's output file. Does not mutate `used`;
+ * the caller records the returned slug.
+ */
+export function uniquifySlug(slug: string, used: Set<string>): string {
+  if (!used.has(slug)) return slug
+  let n = 2
+  while (used.has(`${slug}-${n}`)) n++
+  return `${slug}-${n}`
+}
+
+/**
  * Rewrites raw Notion page-id links `(/<id>...)` to `<linkPrefix>/<slug>`.
  * Falls back to the bare hex id when the page is not in the slug map.
  */

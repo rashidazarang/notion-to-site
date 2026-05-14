@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.1
+
+### Fixed
+
+- **Slug collisions silently dropped pages.** Two pages whose titles slugify to
+  the same value wrote to the same output file — the second overwrote the
+  first (a live sync of 65 pages produced only 64 files). Colliding slugs are
+  now suffixed `-2`, `-3`, … so every page gets its own file.
+
 ## 1.0.0
 
 The 1.0 release — `notion-to-site` is now a typed content framework, not just a

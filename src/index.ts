@@ -18,6 +18,7 @@ export {
   detectLanguage,
   stripMarkdownInline,
   slugify,
+  uniquifySlug,
   resolveNotionLinks,
   stripBackLinks,
   generateToc,
