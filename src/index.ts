@@ -1,8 +1,8 @@
 export { NotionClient } from './core/client.js'
 export { NtxRenderer } from './core/renderer.js'
-export { loadState, saveState, needsUpdate, updatePageState } from './core/state.js'
+export { loadState, saveState, needsUpdate, recordPage } from './core/state.js'
 export type { NtxState, PageState } from './core/state.js'
-export { processImage } from './pipeline/images.js'
+export { processImage, ImageFetchError } from './pipeline/images.js'
 export type { ImageProcessOptions, ImageResult } from './pipeline/images.js'
 export {
   extractComment,

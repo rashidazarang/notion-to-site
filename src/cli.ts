@@ -13,7 +13,7 @@ import matter from 'gray-matter'
 import { loadConfig } from './config.js'
 import { NotionClient } from './core/client.js'
 import { NtxRenderer } from './core/renderer.js'
-import { loadState, saveState, needsUpdate, updatePageState } from './core/state.js'
+import { loadState, saveState, needsUpdate, recordPage } from './core/state.js'
 import { MarkdownAdapter } from './adapters/markdown.js'
 import { MdxAdapter } from './adapters/mdx.js'
 import { JsonAdapter } from './adapters/json.js'
@@ -40,7 +40,7 @@ async function resolveImagePlaceholders(
   quality: number = 80,
   download: boolean = false,
 ): Promise<string> {
-  const { processImage } = await import('./pipeline/images.js')
+  const { processImage, ImageFetchError } = await import('./pipeline/images.js')
   const placeholderRe = /!\[([^\]]*)\]\(ntx-img:[^:]+:([^)]+)\)/g
 
   const matches = [...content.matchAll(placeholderRe)]
@@ -54,8 +54,21 @@ async function resolveImagePlaceholders(
       try {
         const result = await processImage({ url: rawUrl, slug, outputDir: imageDir, quality })
         out = out.replace(m[0], `![${caption}](${result.urlPath})`)
-      } catch {
-        out = out.replace(m[0], '')
+      } catch (err) {
+        if (err instanceof ImageFetchError && err.transient) {
+          // Transient failure — keep the image by falling back to the remote URL.
+          try {
+            const u = new URL(rawUrl)
+            out = out.replace(m[0], `![${caption}](${u.origin + u.pathname})`)
+            console.warn(chalk.yellow(`  image download failed (transient) — kept remote URL for ${slug}`))
+          } catch {
+            out = out.replace(m[0], '')
+          }
+        } else {
+          // Permanent failure (404/410) or processing error — drop the image.
+          console.warn(chalk.yellow(`  image unavailable — removed from ${slug}`))
+          out = out.replace(m[0], '')
+        }
       }
     } else {
       try {
@@ -157,6 +170,8 @@ async function runSync(opts: { incremental?: boolean; db?: string }): Promise<vo
   const seenSlugs = new Set<string>()
   let synced = 0
   let skipped = 0
+  let failures = 0
+  let sinceFlush = 0
   const startTime = Date.now()
 
   const tasks = allPages.map(({ page, slug }) =>
@@ -246,19 +261,24 @@ async function runSync(opts: { incremental?: boolean; db?: string }): Promise<vo
 
         adapter.write(slug, frontmatter, content, outputDir)
 
-        const newState = updatePageState(state, {
+        recordPage(state, {
           pageId: page.id,
           slug,
           lastEditedTime: page.last_edited_time,
           outputPath: path.join(outputDir, slug + '.md'),
           imageHashes: {},
         })
-        Object.assign(state, newState)
 
         spinner.succeed(chalk.green(`✓ ${slug}`))
         synced++
+        // Flush progress periodically so a crash mid-sync doesn't lose everything.
+        if (++sinceFlush >= 20) {
+          sinceFlush = 0
+          saveState(outputDir, state)
+        }
       } catch (err: any) {
         spinner.fail(chalk.red(`✗ ${slug}: ${err.message}`))
+        failures++
       }
     })
   )
@@ -266,27 +286,38 @@ async function runSync(opts: { incremental?: boolean; db?: string }): Promise<vo
   await Promise.all(tasks)
 
   // ── Deletion sync ────────────────────────────────────────────────────────
-  if (!opts.incremental && doDeletions) {
-    const ext = config.adapter === 'mdx' ? '.mdx' : config.adapter === 'json' ? '.json' : '.md'
-    const existingFiles = fs.existsSync(outputDir)
-      ? fs.readdirSync(outputDir).filter(f => f.endsWith(ext))
-      : []
-    let deleted = 0
-    for (const file of existingFiles) {
-      const fileSlug = file.replace(ext, '')
-      if (!seenSlugs.has(fileSlug)) {
-        fs.unlinkSync(path.join(outputDir, file))
-        deleted++
+  // Only delete orphaned files after a clean full sync. A page that failed to
+  // fetch this run looks "unseen" — deleting it on a transient error is data loss.
+  if (!opts.incremental && failures === 0) {
+    if (doDeletions) {
+      const ext = config.adapter === 'mdx' ? '.mdx' : config.adapter === 'json' ? '.json' : '.md'
+      const existingFiles = fs.existsSync(outputDir)
+        ? fs.readdirSync(outputDir).filter(f => f.endsWith(ext))
+        : []
+      let deleted = 0
+      for (const file of existingFiles) {
+        const fileSlug = file.replace(ext, '')
+        if (!seenSlugs.has(fileSlug)) {
+          fs.unlinkSync(path.join(outputDir, file))
+          deleted++
+        }
       }
+      if (deleted > 0) console.log(chalk.yellow(`Deleted ${deleted} orphaned file(s)`))
     }
-    if (deleted > 0) console.log(chalk.yellow(`Deleted ${deleted} orphaned file(s)`))
     state.lastFullSync = new Date().toISOString()
+  } else if (!opts.incremental && doDeletions && failures > 0) {
+    console.log(chalk.yellow(`Skipped deletion pass — ${failures} page(s) failed this run`))
   }
 
   saveState(outputDir, state)
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
-  console.log(chalk.blue(`\nSynced ${synced} pages (${skipped} skipped) in ${elapsed}s`))
+  const failMsg = failures > 0 ? chalk.red(`, ${failures} failed`) : ''
+  console.log(chalk.blue(`\nSynced ${synced} pages (${skipped} skipped${failMsg}) in ${elapsed}s`))
+
+  if (failures > 0) {
+    throw new Error(`${failures} page(s) failed to sync`)
+  }
 }
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
@@ -343,10 +374,17 @@ program
   .action(async (opts) => {
     const intervalSec = parseInt(opts.interval, 10)
     console.log(chalk.blue(`Watching (interval=${intervalSec}s, Ctrl+C to stop)…`))
+    let running = false
     const tick = async () => {
+      if (running) {
+        console.log(chalk.gray('  (previous sync still running — skipping this tick)'))
+        return
+      }
+      running = true
       console.log(chalk.gray(`[${new Date().toISOString()}] Polling…`))
       try { await runSync({ incremental: true }) }
       catch (err: any) { console.error(chalk.red(`Error: ${err.message}`)) }
+      finally { running = false }
     }
     await tick()
     setInterval(tick, intervalSec * 1000)

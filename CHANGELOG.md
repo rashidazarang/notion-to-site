@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.3.0
+
+Correctness and resilience pass — `nts sync` can no longer lose data or report
+success when it actually failed.
+
+### Fixed
+
+- **Data loss:** the deletion pass ran even when pages failed to fetch — a transient
+  API error made a page look "removed" and deleted its local file. The deletion pass
+  now runs only after a clean full sync.
+- **Silent CI success:** `nts sync` exited 0 even when every page failed. It now exits
+  non-zero if any page fails.
+- **Truncated pages:** `getPageBlocks` fetched only the first 100 child blocks, silently
+  cutting off long tables, column lists, and toggles. It now paginates fully.
+- **Corrupt state crash:** an unreadable `.nts-state.json` crashed every command. It is
+  now detected and a fresh state is used instead, with a warning.
+- **Concurrent state race:** parallel page syncs spread a stale state snapshot and could
+  clobber each other's entries. State is now updated in place, per page.
+- **Fragile image downloads:** image fetches ignored HTTP status, didn't follow redirects,
+  and had no timeout — an expired URL fed an error page to the image encoder. Image
+  fetches now check status, follow redirects, time out, and distinguish transient failures
+  (kept, retried next run) from permanent ones (removed).
+
+### Changed
+
+- Sync progress is flushed to `.nts-state.json` periodically, so a crash mid-sync no longer
+  loses all progress.
+- Notion API requests are throttled (~3 req/s) and retried with backoff on rate limits and
+  server errors, using the official SDK's built-in retry support.
+- `nts watch` skips a tick if the previous sync is still running, instead of stacking runs.
+
 ## 0.2.0
 
 ### Added
