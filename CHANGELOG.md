@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.4.0
+
+### Changed
+
+- **Notion API 2025-09-03.** Migrated to the data-source model that replaced direct
+  database queries. `database:` in your config keeps working unchanged — it is resolved
+  to its data source automatically — and the internal raw-request workaround is gone.
+- **Content-addressed images.** Downloaded images are stored flat and keyed by a hash of
+  their canonical URL, so an image referenced from many pages is downloaded, encoded, and
+  stored exactly once. Image paths in output change from `/images/<slug>/<hash>-<slug>.webp`
+  to `/images/<hash>.webp` — re-run a full `nts sync` to regenerate.
+
+### Added
+
+- `dataSource` config option — pins a specific data source for the rare database that
+  contains more than one.
+
 ## 0.3.0
 
 Correctness and resilience pass — `nts sync` can no longer lose data or report

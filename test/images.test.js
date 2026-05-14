@@ -1,7 +1,22 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtempSync, rmSync, existsSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
-import { fetchImageBuffer, ImageFetchError } from '../dist/pipeline/images.js'
+import { fetchImageBuffer, ImageFetchError, processImage } from '../dist/pipeline/images.js'
+
+// A minimal 1x1 PNG — small enough to embed, real enough for sharp to decode.
+const ONE_PX_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+P+/HgAFhAJ/wlseKgAAAABJRU5ErkJggg==',
+  'base64',
+)
+
+function pngResponse() {
+  const ab = new ArrayBuffer(ONE_PX_PNG.byteLength)
+  new Uint8Array(ab).set(ONE_PX_PNG)
+  return { ok: true, status: 200, arrayBuffer: async () => ab }
+}
 
 function withMockedFetch(impl, fn) {
   const orig = globalThis.fetch
@@ -69,3 +84,54 @@ test('fetchImageBuffer: a 200 returns a Buffer of the body', () =>
       assert.equal(buf.length, 4)
     },
   ))
+
+test('processImage: stores content-addressed and dedups a repeated URL', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'nts-img-'))
+  let fetchCount = 0
+  return withMockedFetch(
+    async () => {
+      fetchCount++
+      return pngResponse()
+    },
+    async () => {
+      try {
+        const url = 'https://files.notion.example/abc/image.png?signed=xyz'
+        const first = await processImage({ url, outputDir: dir, quality: 80 })
+        const second = await processImage({ url, outputDir: dir, quality: 80 })
+        assert.equal(first.urlPath, second.urlPath)
+        assert.ok(first.urlPath.endsWith('.webp'))
+        assert.ok(existsSync(first.localPath))
+        assert.equal(fetchCount, 1, 'the repeated URL should be served from the stored file')
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    },
+  )
+})
+
+test('processImage: dedups the same image across different signed URLs', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'nts-img2-'))
+  let fetchCount = 0
+  return withMockedFetch(
+    async () => {
+      fetchCount++
+      return pngResponse()
+    },
+    async () => {
+      try {
+        const a = await processImage({
+          url: 'https://files.notion.example/abc/image.png?sig=AAA',
+          outputDir: dir,
+        })
+        const b = await processImage({
+          url: 'https://files.notion.example/abc/image.png?sig=BBB',
+          outputDir: dir,
+        })
+        assert.equal(a.urlPath, b.urlPath, 'same canonical path → same stored file')
+        assert.equal(fetchCount, 1)
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    },
+  )
+})

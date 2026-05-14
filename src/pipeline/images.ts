@@ -5,7 +5,6 @@ import * as path from 'path'
 
 export interface ImageProcessOptions {
   url: string
-  slug: string
   outputDir: string
   quality?: number
 }
@@ -61,19 +60,23 @@ export async function fetchImageBuffer(url: string): Promise<Buffer> {
 
 export async function processImage(opts: ImageProcessOptions): Promise<ImageResult> {
   const u = new URL(opts.url)
+  // Hash the canonical URL — Notion's S3 URLs carry signed, ever-changing
+  // query params, so hashing origin + pathname gives a stable key. Images are
+  // stored content-addressed and flat, so the same image referenced from many
+  // pages is downloaded, encoded, and stored exactly once (cross-page and
+  // cross-run dedup falls out of the existence check below).
   const canonical = u.origin + u.pathname
-  const hash = crypto.createHash('sha256').update(canonical).digest('hex').slice(0, 8)
-  const filename = `${hash}-${opts.slug}.webp`
-  const writeDir = path.join(opts.outputDir, opts.slug)
-  const destPath = path.join(writeDir, filename)
-  const urlPath = `/images/${opts.slug}/${filename}`
+  const hash = crypto.createHash('sha256').update(canonical).digest('hex').slice(0, 16)
+  const filename = `${hash}.webp`
+  const destPath = path.join(opts.outputDir, filename)
+  const urlPath = `/images/${filename}`
 
   if (fs.existsSync(destPath)) {
     return { localPath: destPath, urlPath, hash }
   }
 
   const buffer = await fetchImageBuffer(opts.url)
-  fs.mkdirSync(writeDir, { recursive: true })
+  fs.mkdirSync(opts.outputDir, { recursive: true })
   await sharp(buffer).webp({ quality: opts.quality ?? 80 }).toFile(destPath)
 
   return { localPath: destPath, urlPath, hash }

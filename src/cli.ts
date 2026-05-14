@@ -52,7 +52,7 @@ async function resolveImagePlaceholders(
     const rawUrl = decodeURIComponent(m[2])
     if (download) {
       try {
-        const result = await processImage({ url: rawUrl, slug, outputDir: imageDir, quality })
+        const result = await processImage({ url: rawUrl, outputDir: imageDir, quality })
         out = out.replace(m[0], `![${caption}](${result.urlPath})`)
       } catch (err) {
         if (err instanceof ImageFetchError && err.transient) {
