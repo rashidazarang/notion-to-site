@@ -14,6 +14,7 @@ import { NotionClient } from './core/client.js'
 import { sync, generateTypes } from './core/sync.js'
 import { loadState } from './core/state.js'
 import { PostFrontmatterSchema } from './schema.js'
+import { migrationAdvice } from './migrate.js'
 
 const pkg = JSON.parse(
   fs.readFileSync(new URL('../package.json', import.meta.url), 'utf-8'),
@@ -42,6 +43,8 @@ export default {
   author: 'Your Name',
   linkPrefix: '/blog',
   images: { download: true, outputDir: './public/images', format: 'webp', quality: 80 },
+  // schema.mode defaults to 'typed' — run \`nts types\` to generate the schema.
+  // Set mode: 'legacy' for the pre-1.0 nested meta.* frontmatter shape.
   schema: { strict: false },
   sync: { concurrency: 5, deletions: true },
   content: { toc: false, stripBackLinks: true },
@@ -116,7 +119,7 @@ program
   .description('Validate all output files against Zod schema')
   .action(async () => {
     const config = await loadConfig()
-    const mode = config.schema?.mode ?? 'legacy'
+    const mode = config.schema?.mode ?? 'typed'
     const outputDir = path.resolve(config.output)
     const ext = config.adapter === 'mdx' ? '.mdx' : config.adapter === 'json' ? '.json' : '.md'
 
@@ -188,7 +191,7 @@ program
   .description('Show sync state and statistics')
   .action(async () => {
     const config = await loadConfig()
-    const mode = config.schema?.mode ?? 'legacy'
+    const mode = config.schema?.mode ?? 'typed'
     const outputDir = path.resolve(config.output)
     const state = loadState(outputDir)
     const ext = config.adapter === 'mdx' ? '.mdx' : config.adapter === 'json' ? '.json' : '.md'
@@ -234,6 +237,17 @@ program
       console.log(`  Other status:   ${other}`)
     }
     console.log(`  Stale entries:  ${stale}\n`)
+  })
+
+program
+  .command('migrate')
+  .description('Check your config against the 1.0 schema-mode default change')
+  .action(async () => {
+    const config = await loadConfig()
+    const advice = migrationAdvice(config)
+    console.log('')
+    console.log(advice.pinned ? chalk.green(advice.message) : chalk.yellow(advice.message))
+    console.log('')
   })
 
 program.parseAsync(process.argv).catch((err: any) => {

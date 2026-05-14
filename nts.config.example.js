@@ -25,10 +25,10 @@ export default {
 
   schema: {
     strict: false, // validate frontmatter with Zod on every sync
-    // mode: 'legacy', // 'legacy' (default) keeps the blog-shaped frontmatter.
-    //                 // 'typed' introspects your Notion database, generates
-    //                 // TypeScript types from it, and emits a flat, faithful
-    //                 // frontmatter shape. Run `nts types` to (re)generate.
+    // mode: 'typed', // 'typed' (default since 1.0) introspects your Notion
+    //                // database, generates TypeScript types from it, and emits
+    //                // a flat frontmatter shape. 'legacy' keeps the pre-1.0
+    //                // nested `meta.*` shape. Run `nts types` to (re)generate.
     // typesOutput: './.notion-to-site/types.ts', // where typed mode writes the schema
   },
 

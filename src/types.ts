@@ -62,9 +62,10 @@ export interface NtxConfig {
   schema: {
     strict: boolean
     /**
-     * `'legacy'` (default) keeps the blog-shaped nested frontmatter. `'typed'`
-     * introspects your Notion database, generates TypeScript types from its
-     * real property schema, and emits a flat, faithful frontmatter shape.
+     * `'typed'` (default since 1.0) introspects your Notion database, generates
+     * TypeScript types from its real property schema, and emits a flat,
+     * faithful frontmatter shape. `'legacy'` keeps the pre-1.0 blog-shaped
+     * nested `meta.*` frontmatter.
      */
     mode?: 'legacy' | 'typed'
     /**

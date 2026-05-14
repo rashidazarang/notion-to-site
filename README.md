@@ -1,9 +1,11 @@
 # notion-to-site
 
-Sync any Notion database to local markdown, MDX, or JSON files.
+Turn any Notion database into typed content for your site.
 
-- **One command sync.** Point `nts` at a Notion database and get structured content files with full frontmatter.
-- **All block types.** Paragraphs, headings, images, callouts, columns, tables, equations, toggles, synced blocks, bookmarks, video, audio, file, PDF, embeds.
+- **Typed content model.** `nts` introspects your database and generates TypeScript types from its real schema — your content, your shape, fully typed.
+- **One command sync.** Point `nts` at a Notion database and get structured markdown, MDX, or JSON with full frontmatter.
+- **All block types.** Paragraphs, headings, images, callouts, columns, tables, equations, toggles, synced blocks, bookmarks, video, audio, file, PDF, embeds — with rich-text fidelity (annotations, colors, mentions).
+- **Framework integrations.** First-class loaders for Astro (`notion-to-site/astro`) and Next.js (`notion-to-site/next`).
 - **Incremental updates.** Track what changed since the last sync. Only re-fetch updated pages.
 
 ## Install
@@ -59,6 +61,7 @@ Your content files will appear in `./content`.
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `database` | `string` | (required) | Your Notion database ID |
+| `dataSource` | `string` | auto | Explicit data source ID, for a database with more than one |
 | `output` | `string` | `'./content'` | Directory for output files |
 | `adapter` | `'markdown' \| 'mdx' \| 'json'` | `'markdown'` | Output format |
 | `author` | `string` | `''` | Default author name when not set on the page |
@@ -68,13 +71,32 @@ Your content files will appear in `./content`.
 | `images.format` | `'webp' \| 'original'` | `'webp'` | Convert images to WebP or keep original format |
 | `images.quality` | `number` | `80` | WebP compression quality (1-100) |
 | `schema.strict` | `boolean` | `false` | Validate frontmatter with Zod on every sync |
+| `schema.mode` | `'typed' \| 'legacy'` | `'typed'` | Frontmatter shape — see [Schema modes](#schema-modes) |
+| `schema.typesOutput` | `string` | `'./.notion-to-site/types.ts'` | Where typed mode writes the generated schema |
 | `sync.concurrency` | `number` | `5` | Number of pages to sync in parallel |
 | `sync.deletions` | `boolean` | `true` | Delete local files for pages removed from Notion |
 | `content.toc` | `boolean` | `false` | Insert a table of contents after the first heading |
 | `content.stripBackLinks` | `boolean` | `true` | Remove back-navigation links from Notion pages |
+| `content.color` | `'drop' \| 'inline' \| 'class'` | `'drop'` | How to render Notion text/background colors |
+| `content.transformers` | `Record<string, fn>` | none | Per-block-type rendering overrides |
 | `watch.interval` | `number` | `60` | Polling interval in seconds for `nts watch` |
 | `query.filter` | `NtxQueryFilter` | none | Sync only pages matching a Notion filter (see below) |
 | `query.page_size` | `number` | `100` | Page size for the database query (max 100) |
+
+### Schema modes
+
+`schema.mode` controls the shape of the frontmatter `nts sync` writes.
+
+- **`'typed'` (default)** — `nts` introspects your Notion database, generates a
+  TypeScript module (`./.notion-to-site/types.ts`: a Zod schema plus its inferred
+  type), and writes a *flat* frontmatter that mirrors your database's real
+  property names, plus `_id` (the slug) and `_notion_id`. This is what makes the
+  "X" in notion-to-X your own content model rather than a fixed blog shape.
+- **`'legacy'`** — the pre-1.0 nested shape, with page metadata under `meta.*`
+  (`meta.title`, `meta.tags`, …). Set this to keep output unchanged from 0.x.
+
+Upgrading from 0.x? Run `nts migrate` — it checks whether your config pins
+`schema.mode` and tells you exactly what changes.
 
 ### Filtering at sync time
 
@@ -122,14 +144,16 @@ If your database has a `Domain Tags` multi-select column, its values are written
 | `nts sync` | Full sync of your Notion database to local files |
 | `nts sync --incremental` | Only sync pages changed since the last run |
 | `nts sync --db <id>` | Override the database ID from config |
+| `nts types` | Generate TypeScript types from your Notion database schema |
 | `nts watch` | Poll and incrementally sync on a timer |
 | `nts watch --interval <seconds>` | Set the polling interval (default: 60) |
 | `nts validate` | Validate all output files against the Zod schema |
 | `nts status` | Show sync state, tracked pages, and statistics |
+| `nts migrate` | Check your config against the 1.0 schema-mode default change |
 
 ## Output format
 
-Each synced page produces a file with YAML frontmatter and rendered content. Here is a sample:
+Each synced page produces a file with YAML frontmatter and rendered content. The sample below is the **`legacy`** schema-mode shape; in the default **`typed`** mode the frontmatter is flat and mirrors your database's real property names (see [Schema modes](#schema-modes)).
 
 ```yaml
 ---

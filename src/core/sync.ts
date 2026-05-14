@@ -240,7 +240,9 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
   const databaseId = db ?? config.database
 
   // ── Schema mode ──────────────────────────────────────────────────────────
-  const mode = config.schema?.mode ?? 'legacy'
+  // notion-to-site 1.0 defaults to 'typed'. Set `schema.mode: 'legacy'` for the
+  // pre-1.0 nested `meta.*` frontmatter shape.
+  const mode = config.schema?.mode ?? 'typed'
   let ntsSchema: NtsSchema | undefined
   if (mode === 'typed') {
     log('Introspecting Notion database schema…')

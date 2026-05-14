@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.0.0
+
+The 1.0 release — `notion-to-site` is now a typed content framework, not just a
+markdown sync tool.
+
+### Breaking
+
+- **`schema.mode` now defaults to `'typed'`.** A `nts sync` with a config that
+  does not set `schema.mode` produces the flat, typed frontmatter shape that
+  mirrors your Notion database — instead of the legacy nested `meta.*` shape.
+  Run `nts migrate` to see exactly how this affects your project, and set
+  `schema: { mode: 'legacy' }` to keep 0.x behavior unchanged.
+
+### Added
+
+- **`nts migrate`** — checks whether your config pins `schema.mode` and prints
+  precise upgrade guidance for the default change. `migrationAdvice()` is also
+  exported for programmatic use.
+
+### Notes
+
+- The `notion-to-site/astro` loader pins `legacy` mode internally, so existing
+  Astro setups are unaffected by the default change.
+- The public API — the `exports` map and the programmatic surface (`sync`,
+  `defineContent`, `renderRichText`, the typegen functions, the Astro loader,
+  the Next.js helpers) — is considered stable as of 1.0.
+
 ## 0.9.0
 
 First-class Next.js integration.

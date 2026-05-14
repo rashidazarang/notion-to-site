@@ -106,7 +106,9 @@ export function notionLoader(options: NotionLoaderOptions): AstroLoader {
         adapter: 'markdown',
         linkPrefix: options.linkPrefix ?? '/blog',
         images: { download: false, outputDir: './public/images', format: 'webp', quality: 80 },
-        schema: { strict: false },
+        // The loader pins the legacy frontmatter shape so a collection's schema
+        // is predictable without a separate type-generation step.
+        schema: { strict: false, mode: 'legacy' },
         ...(options.filter ? { query: { filter: options.filter } } : {}),
       }
       const result = await sync({
