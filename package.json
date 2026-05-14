@@ -1,6 +1,6 @@
 {
   "name": "notion-to-site",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Sync any Notion database to static markdown, MDX, or JSON files",
   "type": "module",
   "bin": {
@@ -48,7 +48,6 @@
     "dotenv": "^17.4.2",
     "gray-matter": "^4.0.3",
     "notion-to-md": "^3.1.9",
-    "ora": "^9.4.0",
     "sharp": "^0.34.5",
     "zod": "^4.4.3"
   },

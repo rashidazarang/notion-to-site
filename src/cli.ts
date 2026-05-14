@@ -5,398 +5,15 @@ dotenv.config({ path: '.env.local', override: true, quiet: true })
 
 import { Command } from 'commander'
 import chalk from 'chalk'
-import ora from 'ora'
 import * as path from 'path'
 import * as fs from 'fs'
 import matter from 'gray-matter'
 
 import { loadConfig } from './config.js'
 import { NotionClient } from './core/client.js'
-import { NtxRenderer } from './core/renderer.js'
-import { loadState, saveState, needsUpdate, recordPage } from './core/state.js'
-import { MarkdownAdapter } from './adapters/markdown.js'
-import { MdxAdapter } from './adapters/mdx.js'
-import { JsonAdapter } from './adapters/json.js'
-import {
-  extractProperties,
-  extractPropertiesTyped,
-  PostFrontmatterSchema,
-  validateFrontmatter,
-} from './schema.js'
-import type { PostFrontmatter } from './schema.js'
-import { introspectSchema, type NtsSchema } from './typegen/introspect.js'
-import { emitTypes } from './typegen/emit.js'
-import type { NtxConfig } from './types.js'
-import {
-  detectLanguage,
-  extractComment,
-  slugify,
-  resolveNotionLinks,
-  stripBackLinks,
-  generateToc,
-  extractDescription,
-  computeReadingTime,
-  computeWordCount,
-} from './pipeline/content.js'
-
-// ── Image resolution ──────────────────────────────────────────────────────────
-
-async function resolveImagePlaceholders(
-  content: string,
-  slug: string,
-  imageDir: string,
-  quality: number = 80,
-  download: boolean = false,
-): Promise<string> {
-  const { processImage, ImageFetchError } = await import('./pipeline/images.js')
-  const placeholderRe = /!\[([^\]]*)\]\(ntx-img:[^:]+:([^)]+)\)/g
-
-  const matches = [...content.matchAll(placeholderRe)]
-  if (matches.length === 0) return content
-
-  let out = content
-  for (const m of matches) {
-    const caption = m[1]
-    const rawUrl = decodeURIComponent(m[2])
-    if (download) {
-      try {
-        const result = await processImage({ url: rawUrl, outputDir: imageDir, quality })
-        out = out.replace(m[0], `![${caption}](${result.urlPath})`)
-      } catch (err) {
-        if (err instanceof ImageFetchError && err.transient) {
-          // Transient failure — keep the image by falling back to the remote URL.
-          try {
-            const u = new URL(rawUrl)
-            out = out.replace(m[0], `![${caption}](${u.origin + u.pathname})`)
-            console.warn(chalk.yellow(`  image download failed (transient) — kept remote URL for ${slug}`))
-          } catch {
-            out = out.replace(m[0], '')
-          }
-        } else {
-          // Permanent failure (404/410) or processing error — drop the image.
-          console.warn(chalk.yellow(`  image unavailable — removed from ${slug}`))
-          out = out.replace(m[0], '')
-        }
-      }
-    } else {
-      try {
-        const u = new URL(rawUrl)
-        const cleanUrl = u.origin + u.pathname
-        out = out.replace(m[0], `![${caption}](${cleanUrl})`)
-      } catch {
-        out = out.replace(m[0], '')
-      }
-    }
-  }
-  return out
-}
-
-// ── Parallel limiter ─────────────────────────────────────────────────────────
-
-function makeLimiter(concurrency: number) {
-  let running = 0
-  const queue: (() => void)[] = []
-
-  function next() {
-    if (running >= concurrency || queue.length === 0) return
-    running++
-    const fn = queue.shift()!
-    fn()
-  }
-
-  return function limit<T>(fn: () => Promise<T>): Promise<T> {
-    return new Promise<T>((resolve, reject) => {
-      queue.push(() => {
-        fn()
-          .then(resolve)
-          .catch(reject)
-          .finally(() => { running--; next() })
-      })
-      next()
-    })
-  }
-}
-
-// ── Frontmatter builders ─────────────────────────────────────────────────────
-
-function buildLegacyFrontmatter(
-  page: any,
-  slug: string,
-  content: string,
-  configOutput: string,
-  configAuthor: string,
-): { frontmatter: PostFrontmatter; title: string } {
-  const props = extractProperties(page)
-  const language = props.language || detectLanguage(content)
-  const comment = extractComment(content, props.title)
-  const description = props.description || extractDescription(content)
-  const frontmatter: PostFrontmatter = {
-    id: slug,
-    path: `/${configOutput.replace(/^\.\//, '')}/${slug}.md`,
-    type: props.post_type?.toLowerCase() || 'post',
-    intent: '',
-    version: '1.0',
-    created: page.created_time.split('T')[0],
-    last_updated: page.last_edited_time.split('T')[0],
-    source: { platform: 'notion', page_id: page.id },
-    meta: {
-      title: props.title,
-      seo_title: props.seo_title || props.title,
-      author: props.author || configAuthor,
-      description,
-      canonical: props.canonical,
-      category: props.category,
-      main_tag: props.main_tag,
-      tags: props.tags,
-      featured: props.featured,
-      featured_at: props.featured_at,
-      language,
-      post_type: props.post_type,
-      status: props.status,
-      reading_time: computeReadingTime(content),
-      word_count: computeWordCount(content),
-      comment,
-      cover_image: props.cover_image,
-      domain_tags: props.domain_tags,
-    },
-  }
-  return { frontmatter, title: props.title }
-}
-
-function buildTypedFrontmatter(
-  page: any,
-  slug: string,
-  schema: NtsSchema,
-): { frontmatter: Record<string, any>; title: string } {
-  const props = extractPropertiesTyped(page, schema)
-  const title = String(props[schema.titleProperty] ?? '')
-  // `_id` (the slug) and `_notion_id` are nts-managed; user properties stay flat.
-  return { frontmatter: { ...props, _id: slug, _notion_id: page.id }, title }
-}
-
-/** Introspects the data source schema and writes the generated types module. */
-async function generateTypes(
-  config: NtxConfig,
-  client: NotionClient,
-  databaseId: string,
-): Promise<NtsSchema> {
-  const dataSourceId = await client.resolveDataSource(databaseId, config.dataSource)
-  const rawProps = await client.retrieveDataSourceSchema(dataSourceId)
-  const schema = introspectSchema(dataSourceId, rawProps)
-  const typesPath = path.resolve(config.schema?.typesOutput ?? './.notion-to-site/types.ts')
-  fs.mkdirSync(path.dirname(typesPath), { recursive: true })
-  fs.writeFileSync(typesPath, emitTypes(schema), 'utf-8')
-  return schema
-}
-
-// ── Sync ──────────────────────────────────────────────────────────────────────
-
-async function runSync(opts: { incremental?: boolean; db?: string }): Promise<void> {
-  const config = await loadConfig()
-  const outputDir = path.resolve(config.output)
-  const state = loadState(outputDir)
-  const client = new NotionClient()
-  const renderer = new NtxRenderer(client, {
-    color: config.content?.color,
-    transformers: config.content?.transformers,
-  })
-
-  const concurrency = config.sync?.concurrency ?? 5
-  const doDeletions = config.sync?.deletions ?? true
-  const doToc = config.content?.toc ?? false
-  const doStrip = config.content?.stripBackLinks ?? true
-  const configAuthor = config.author ?? ''
-  const linkPrefix = config.linkPrefix ?? '/blog'
-
-  const adapter =
-    config.adapter === 'mdx'
-      ? new MdxAdapter()
-      : config.adapter === 'json'
-        ? new JsonAdapter()
-        : new MarkdownAdapter()
-
-  const databaseId = opts.db ?? config.database
-
-  // ── Schema mode ──────────────────────────────────────────────────────────
-  const mode = config.schema?.mode ?? 'legacy'
-  let ntsSchema: NtsSchema | undefined
-  if (mode === 'typed') {
-    console.log(chalk.gray('Introspecting Notion database schema…'))
-    ntsSchema = await generateTypes(config, client, databaseId)
-    const typesPath = path.resolve(config.schema?.typesOutput ?? './.notion-to-site/types.ts')
-    console.log(
-      chalk.gray(`Generated types for ${ntsSchema.properties.length} properties → ${typesPath}`),
-    )
-  }
-
-  // ── Pass 1: collect all pages + build slugMap ────────────────────────────
-  const queryOpts = {
-    filter: config.query?.filter,
-    pageSize: config.query?.page_size,
-    dataSource: config.dataSource,
-  }
-  if (queryOpts.filter) {
-    console.log(chalk.gray('Fetching page list with filter…'))
-  } else {
-    console.log(chalk.gray('Fetching page list…'))
-  }
-  const allPages: { page: any; slug: string }[] = []
-
-  for await (const page of client.paginateDatabase(databaseId, queryOpts)) {
-    let slug: string | null = null
-    if (mode === 'typed' && ntsSchema) {
-      // Typed mode never guesses — the slug comes from the title property.
-      const title = String(
-        extractPropertiesTyped(page, ntsSchema)[ntsSchema.titleProperty] ?? '',
-      )
-      if (!title) continue
-      slug = slugify(title)
-    } else {
-      const props = extractProperties(page)
-      if (!props.title) continue
-      // Prefer a Notion slug property, fall back to the slugified title.
-      slug = props.slug ?? slugify(props.title)
-    }
-    if (slug) allPages.push({ page, slug })
-  }
-
-  // Build pageId → slug map (both dashed and hex forms)
-  const slugMap = new Map<string, string>()
-  for (const { page, slug } of allPages) {
-    slugMap.set(page.id, slug)
-    slugMap.set(page.id.replace(/-/g, ''), slug)
-  }
-  // Give renderer access for link_to_page transformer
-  renderer.slugMap = slugMap
-  renderer.linkPrefix = linkPrefix
-
-  console.log(chalk.gray(`Found ${allPages.length} pages. Syncing with concurrency=${concurrency}…`))
-
-  // ── Pass 2: sync each page (parallel) ───────────────────────────────────
-  const limit = makeLimiter(concurrency)
-  const seenSlugs = new Set<string>()
-  let synced = 0
-  let skipped = 0
-  let failures = 0
-  let sinceFlush = 0
-  const startTime = Date.now()
-
-  const tasks = allPages.map(({ page, slug }) =>
-    limit(async () => {
-      seenSlugs.add(slug)
-
-      if (opts.incremental && !needsUpdate(state, page.id, page.last_edited_time)) {
-        skipped++
-        return
-      }
-
-      const spinner = ora({ text: `Syncing ${slug}…`, isSilent: concurrency > 1 }).start()
-
-      try {
-        let content = await renderer.renderPage(page.id)
-
-        // Image resolution
-        content = await resolveImagePlaceholders(
-          content, slug,
-          path.resolve(config.images.outputDir),
-          config.images.quality ?? 80,
-          config.images.download,
-        )
-
-        // Internal link resolution
-        content = resolveNotionLinks(content, slugMap, linkPrefix)
-
-        // Strip Notion back-navigation links
-        if (doStrip) content = stripBackLinks(content)
-
-        // TOC injection
-        if (doToc) {
-          const toc = generateToc(content)
-          if (toc) {
-            // Insert after first heading
-            const firstH = content.indexOf('\n## ')
-            if (firstH !== -1) {
-              content = content.slice(0, firstH + 1) + toc + content.slice(firstH + 1)
-            }
-          }
-        }
-
-        // Build frontmatter for the active schema mode.
-        const { frontmatter, title } =
-          mode === 'typed' && ntsSchema
-            ? buildTypedFrontmatter(page, slug, ntsSchema)
-            : buildLegacyFrontmatter(page, slug, content, config.output, configAuthor)
-
-        if (config.schema.strict && mode === 'legacy') {
-          validateFrontmatter(frontmatter as PostFrontmatter)
-        }
-
-        // Inject an H1 from the title if the content doesn't already open with one.
-        const hasH1 = /^#\s/.test(content.trimStart())
-        const finalContent = hasH1 ? content : `# ${title}\n\n${content}`
-
-        adapter.write(slug, frontmatter, finalContent, outputDir)
-
-        recordPage(state, {
-          pageId: page.id,
-          slug,
-          lastEditedTime: page.last_edited_time,
-          outputPath: path.join(outputDir, slug + '.md'),
-          imageHashes: {},
-        })
-
-        spinner.succeed(chalk.green(`✓ ${slug}`))
-        synced++
-        // Flush progress periodically so a crash mid-sync doesn't lose everything.
-        if (++sinceFlush >= 20) {
-          sinceFlush = 0
-          saveState(outputDir, state)
-        }
-      } catch (err: any) {
-        spinner.fail(chalk.red(`✗ ${slug}: ${err.message}`))
-        failures++
-      }
-    })
-  )
-
-  await Promise.all(tasks)
-
-  // ── Deletion sync ────────────────────────────────────────────────────────
-  // Only delete orphaned files after a clean full sync. A page that failed to
-  // fetch this run looks "unseen" — deleting it on a transient error is data loss.
-  if (!opts.incremental && failures === 0) {
-    if (doDeletions) {
-      const ext = config.adapter === 'mdx' ? '.mdx' : config.adapter === 'json' ? '.json' : '.md'
-      const existingFiles = fs.existsSync(outputDir)
-        ? fs.readdirSync(outputDir).filter(f => f.endsWith(ext))
-        : []
-      let deleted = 0
-      for (const file of existingFiles) {
-        const fileSlug = file.replace(ext, '')
-        if (!seenSlugs.has(fileSlug)) {
-          fs.unlinkSync(path.join(outputDir, file))
-          deleted++
-        }
-      }
-      if (deleted > 0) console.log(chalk.yellow(`Deleted ${deleted} orphaned file(s)`))
-    }
-    state.lastFullSync = new Date().toISOString()
-  } else if (!opts.incremental && doDeletions && failures > 0) {
-    console.log(chalk.yellow(`Skipped deletion pass — ${failures} page(s) failed this run`))
-  }
-
-  saveState(outputDir, state)
-
-  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
-  const failMsg = failures > 0 ? chalk.red(`, ${failures} failed`) : ''
-  console.log(chalk.blue(`\nSynced ${synced} pages (${skipped} skipped${failMsg}) in ${elapsed}s`))
-
-  if (failures > 0) {
-    throw new Error(`${failures} page(s) failed to sync`)
-  }
-}
-
-// ── CLI ───────────────────────────────────────────────────────────────────────
+import { sync, generateTypes } from './core/sync.js'
+import { loadState } from './core/state.js'
+import { PostFrontmatterSchema } from './schema.js'
 
 const pkg = JSON.parse(
   fs.readFileSync(new URL('../package.json', import.meta.url), 'utf-8'),
@@ -440,7 +57,16 @@ program
   .option('--incremental', 'Only sync pages changed since last run', false)
   .option('--db <id>', 'Override the database ID from config')
   .action(async (opts) => {
-    await runSync(opts)
+    const config = await loadConfig()
+    const result = await sync({
+      config,
+      incremental: opts.incremental,
+      db: opts.db,
+      log: (m) => console.log(chalk.gray(m)),
+    })
+    if (result.failures > 0) {
+      throw new Error(`${result.failures} page(s) failed to sync`)
+    }
   })
 
 program
@@ -472,9 +98,14 @@ program
       }
       running = true
       console.log(chalk.gray(`[${new Date().toISOString()}] Polling…`))
-      try { await runSync({ incremental: true }) }
-      catch (err: any) { console.error(chalk.red(`Error: ${err.message}`)) }
-      finally { running = false }
+      try {
+        const config = await loadConfig()
+        await sync({ config, incremental: true, log: (m) => console.log(chalk.gray(m)) })
+      } catch (err: any) {
+        console.error(chalk.red(`Error: ${err.message}`))
+      } finally {
+        running = false
+      }
     }
     await tick()
     setInterval(tick, intervalSec * 1000)
@@ -494,7 +125,7 @@ program
       process.exit(1)
     }
 
-    const files = fs.readdirSync(outputDir).filter(f => f.endsWith(ext))
+    const files = fs.readdirSync(outputDir).filter((f) => f.endsWith(ext))
     let failures = 0
 
     for (const file of files) {
@@ -506,9 +137,17 @@ program
         data = (JSON.parse(raw) as any).frontmatter
       } else if (ext === '.mdx') {
         const match = raw.match(/export const meta = (\{[\s\S]*?\n\})/)
-        if (!match) { console.log(chalk.red(`✗ ${slug}: no meta export`)); failures++; continue }
-        try { data = JSON.parse(match[1]) } catch (e: any) {
-          console.log(chalk.red(`✗ ${slug}: invalid JSON — ${e.message}`)); failures++; continue
+        if (!match) {
+          console.log(chalk.red(`✗ ${slug}: no meta export`))
+          failures++
+          continue
+        }
+        try {
+          data = JSON.parse(match[1])
+        } catch (e: any) {
+          console.log(chalk.red(`✗ ${slug}: invalid JSON — ${e.message}`))
+          failures++
+          continue
         }
       } else {
         data = matter(raw).data
@@ -531,13 +170,16 @@ program
       if (result.success) {
         console.log(chalk.green(`✓ ${slug}`))
       } else {
-        const msg = result.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ')
+        const msg = result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')
         console.log(chalk.red(`✗ ${slug}: ${msg}`))
         failures++
       }
     }
 
-    if (failures > 0) { console.error(chalk.red(`\n${failures} file(s) failed`)); process.exit(1) }
+    if (failures > 0) {
+      console.error(chalk.red(`\n${failures} file(s) failed`))
+      process.exit(1)
+    }
     console.log(chalk.blue(`\nAll ${files.length} files valid`))
   })
 
@@ -557,21 +199,33 @@ program
     console.log(`  Last full sync: ${state.lastFullSync ?? 'never'}`)
     console.log(`  Tracked pages:  ${Object.keys(state.pages).length}`)
 
-    let published = 0; let other = 0; let stale = 0
+    let published = 0
+    let other = 0
+    let stale = 0
     for (const entry of Object.values(state.pages)) {
       const fp = path.join(outputDir, entry.slug + ext)
-      if (!fs.existsSync(fp)) { stale++; continue }
+      if (!fs.existsSync(fp)) {
+        stale++
+        continue
+      }
       // The Published / Other breakdown is specific to the legacy schema shape.
       if (mode === 'legacy') {
         try {
           const raw = fs.readFileSync(fp, 'utf-8')
-          const data: any = ext === '.json'
-            ? JSON.parse(raw).frontmatter
-            : ext === '.mdx'
-              ? (() => { const m = raw.match(/export const meta = (\{[\s\S]*?\n\})/); return m ? JSON.parse(m[1]) : {} })()
-              : matter(raw).data
-          if (data?.meta?.status === 'Published') published++; else other++
-        } catch { other++ }
+          const data: any =
+            ext === '.json'
+              ? JSON.parse(raw).frontmatter
+              : ext === '.mdx'
+                ? (() => {
+                    const m = raw.match(/export const meta = (\{[\s\S]*?\n\})/)
+                    return m ? JSON.parse(m[1]) : {}
+                  })()
+                : matter(raw).data
+          if (data?.meta?.status === 'Published') published++
+          else other++
+        } catch {
+          other++
+        }
       }
     }
 

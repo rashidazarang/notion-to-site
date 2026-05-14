@@ -20,6 +20,16 @@ export interface NtxQueryFilter {
   or?: NtxQueryFilter[]
 }
 
+/** A single synced page — the unit returned by `sync()` and emitted into the content module. */
+export interface SyncedPage {
+  /** The page's slug (also its output filename). */
+  slug: string
+  /** The page's frontmatter — the legacy nested shape or the flat typed shape. */
+  frontmatter: Record<string, any>
+  /** The rendered page body (markdown). */
+  content: string
+}
+
 /** How Notion text/background colors are rendered in rich text. */
 export type ColorStrategy = 'drop' | 'inline' | 'class'
 

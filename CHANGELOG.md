@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.7.0
+
+Importable typed content API — the sync engine is now a programmatic `sync()`
+function, and every sync emits a typed data module you can import directly.
+
+### Added
+
+- **`sync()`** — the programmatic sync engine behind `nts sync`. Takes a config,
+  returns a `SyncResult` (`{ synced, skipped, failures, deleted, pages }`), and
+  logs through an injectable callback. The framework integrations build on this.
+- **Importable content module** — every write-mode sync emits
+  `.notion-to-site/index.js` + `index.d.ts`, so a project can
+  `import { pages, pagesBySlug } from './.notion-to-site'` with full types
+  (legacy mode types against `PostFrontmatter`, typed mode against the
+  generated `NotionContent`).
+- **`defineContent()`** — a typed identity helper for authoring `nts.config.js`
+  with editor autocomplete.
+- Programmatic exports: `sync`, `generateTypes`, `defineContent`,
+  `buildContentModule`, `emitContentModule`.
+
+### Changed
+
+- `runSync` moved out of the CLI into `src/core/sync.ts`. The `nts sync`,
+  `nts watch`, and `nts types` commands are now thin wrappers over the engine.
+- Removed the `ora` dependency — per-page spinners were silent at the default
+  concurrency anyway; sync progress is logged plainly.
+
 ## 0.6.0
 
 Typed content model — `notion-to-site` can now introspect *your* Notion
