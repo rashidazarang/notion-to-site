@@ -7,4 +7,4 @@ Pick one, follow its README, and you'll have a working site powered by your Noti
 | Example | Framework | Description |
 |---------|-----------|-------------|
 | [nextjs/](./nextjs/) | Next.js 14 (App Router) | Static blog with gray-matter frontmatter parsing |
-| [astro/](./astro/) | Astro 4 (Content Collections) | Static blog using Astro's built-in content layer |
+| [astro/](./astro/) | Astro 5 (Content Layer) | Blog powered by the `notion-to-site/astro` loader — no sync step, no files on disk |

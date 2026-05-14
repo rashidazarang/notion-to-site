@@ -1,23 +1,20 @@
 ---
-import { getCollection } from 'astro:content'
+import { getCollection, render } from 'astro:content'
 
 export async function getStaticPaths() {
   const posts = await getCollection('blog')
-  return posts.map((post) => ({
-    params: { slug: post.slug },
-    props: { post },
-  }))
+  return posts.map((post) => ({ params: { slug: post.id }, props: { post } }))
 }
 
 const { post } = Astro.props
-const { Content } = await post.render()
+const { Content } = await render(post)
 ---
 
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{post.data.title}</title>
+    <title>{post.data.meta.title}</title>
   </head>
   <body style="max-width: 720px; margin: 0 auto; padding: 2rem 1rem; font-family: system-ui, sans-serif;">
     <nav style="margin-bottom: 2rem; border-bottom: 1px solid #eee; padding-bottom: 1rem;">
@@ -25,10 +22,10 @@ const { Content } = await post.render()
     </nav>
     <article>
       <header style="margin-bottom: 2rem;">
-        <h1>{post.data.title}</h1>
+        <h1>{post.data.meta.title}</h1>
         <div style="font-size: 0.875rem; color: #666;">
           {post.data.created && <span>{post.data.created}</span>}
-          {post.data.main_tag && <span> &middot; {post.data.main_tag}</span>}
+          {post.data.meta.main_tag && <span> &middot; {post.data.meta.main_tag}</span>}
         </div>
       </header>
       <Content />

@@ -1,8 +1,8 @@
 ---
 import { getCollection } from 'astro:content'
 
-const posts = (await getCollection('blog')).sort(
-  (a, b) => (b.data.created || '').localeCompare(a.data.created || '')
+const posts = (await getCollection('blog')).sort((a, b) =>
+  (b.data.created || '').localeCompare(a.data.created || ''),
 )
 ---
 
@@ -18,17 +18,17 @@ const posts = (await getCollection('blog')).sort(
     </nav>
     <h1>Posts</h1>
     {posts.length === 0 ? (
-      <p>No posts yet. Run <code>npm run sync</code> to pull content from Notion.</p>
+      <p>No posts yet — check your NOTION_API_KEY and NOTION_DATABASE_ID.</p>
     ) : (
       <ul style="list-style: none; padding: 0;">
         {posts.map((post) => (
           <li style="margin-bottom: 1.5rem;">
-            <a href={`/blog/${post.slug}`} style="font-size: 1.125rem; font-weight: 500;">
-              {post.data.title}
+            <a href={`/blog/${post.id}`} style="font-size: 1.125rem; font-weight: 500;">
+              {post.data.meta.title}
             </a>
             <div style="font-size: 0.875rem; color: #666; margin-top: 0.25rem;">
               {post.data.created && <span>{post.data.created}</span>}
-              {post.data.main_tag && <span> &middot; {post.data.main_tag}</span>}
+              {post.data.meta.main_tag && <span> &middot; {post.data.meta.main_tag}</span>}
             </div>
           </li>
         ))}

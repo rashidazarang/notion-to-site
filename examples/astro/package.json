@@ -6,14 +6,10 @@
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
-    "preview": "astro preview",
-    "sync": "nts sync"
+    "preview": "astro preview"
   },
   "dependencies": {
-    "astro": "^4.8.0",
-    "@astrojs/mdx": "^3.1.0"
-  },
-  "devDependencies": {
+    "astro": "^5.0.0",
     "notion-to-site": "latest"
   }
 }

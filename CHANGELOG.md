@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.8.0
+
+First-class Astro integration.
+
+### Added
+
+- **`notion-to-site/astro`** — an Astro Content Layer loader. Use `notionLoader()`
+  directly in a collection definition; it runs the sync engine in-process when
+  Astro builds the collection, so `getCollection()` and `<Content />` work with
+  no `nts sync` step and no files on disk.
+- The package now has an `exports` map: `notion-to-site` (core) and
+  `notion-to-site/astro` (the loader). `astro` is an optional peer dependency.
+
+### Changed
+
+- `examples/astro` rewritten to use the loader (Astro 5, Content Layer).
+
 ## 0.7.0
 
 Importable typed content API — the sync engine is now a programmatic `sync()`

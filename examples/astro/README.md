@@ -1,6 +1,9 @@
 # nts + Astro Example
 
-A minimal Astro 4 blog using content collections, powered by notion-to-site.
+A minimal Astro 5 blog powered by notion-to-site's Content Layer loader.
+
+There is **no sync step and no files on disk** — `notionLoader()` pulls the
+Notion database directly when Astro builds the content collection.
 
 ## Quick Start
 
@@ -9,13 +12,16 @@ A minimal Astro 4 blog using content collections, powered by notion-to-site.
    ```sh
    npm install
    ```
-3. Sync content from Notion:
-   ```sh
-   npm run sync
-   ```
-4. Start the dev server:
+3. Start the dev server:
    ```sh
    npm run dev
    ```
 
 Open [http://localhost:4321](http://localhost:4321) to see your posts.
+
+## How it works
+
+`src/content.config.ts` defines a collection whose `loader` is `notionLoader()`
+from `notion-to-site/astro`. On build, the loader runs the notion-to-site sync
+engine in-process and populates Astro's content store — so `getCollection()`
+and `<Content />` work without an intermediate `content/` directory.

@@ -193,7 +193,20 @@ Place your config output in `./content` and use a library like `gray-matter` to 
 
 ### Astro
 
-Astro's content collections work well with the markdown adapter. Set `output` to `./src/content/blog` and define a matching collection schema in `src/content/config.ts`. Astro will pick up the frontmatter fields automatically. Use `adapter: 'mdx'` if your pages use components.
+The cleanest path is the Content Layer loader — no `nts sync` step and no files on disk:
+
+```ts
+// src/content.config.ts
+import { defineCollection } from 'astro:content'
+import { notionLoader } from 'notion-to-site/astro'
+
+const blog = defineCollection({
+  loader: notionLoader({ database: process.env.NOTION_DATABASE_ID }),
+})
+export const collections = { blog }
+```
+
+The loader runs the sync engine in-process when Astro builds the collection, so `getCollection()` and `<Content />` work directly. See [`examples/astro`](./examples/astro). Prefer files on disk? Set `output` to `./src/content/blog`, run `nts sync`, and define a matching collection schema.
 
 ### SvelteKit
 
