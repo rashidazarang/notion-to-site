@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.5.0
+
+Renderer fidelity pass — a shared rich-text serializer replaces the lossy
+`plain_text` joins in callouts, tables, and code captions.
+
+### Added
+
+- `renderRichText()` — a rich-text serializer that preserves bold / italic /
+  strikethrough / underline / code annotations, links, inline equations,
+  colors, and mentions (resolving `@page` mentions to internal links).
+  Exported for use by framework integrations.
+- `content.color` config — how to render Notion's text/background colors:
+  `'drop'` (default — ignored), `'inline'` (`<span style>`), or `'class'`
+  (`<span class="notion-color-...">`).
+- `content.transformers` config — per-block-type rendering overrides, for
+  custom handling of any block type.
+
+### Changed
+
+- **Callouts and table cells now carry full rich text.** They previously
+  collapsed to plain text, dropping bold, italic, links, and mentions. This
+  enriches existing output — re-running `nts sync` will show formatting diffs
+  with no semantic change.
+- **Tables respect the column-header flag.** Row 0 is treated as a header only
+  when Notion's `has_column_header` is set; otherwise an empty header row is
+  emitted so the markdown table stays valid.
+- Code blocks now preserve their caption (previously dropped).
+- Child databases render as a bold titled reference instead of a bare title.
+
 ## 0.4.0
 
 ### Changed

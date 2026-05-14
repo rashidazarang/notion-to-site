@@ -116,7 +116,10 @@ async function runSync(opts: { incremental?: boolean; db?: string }): Promise<vo
   const outputDir = path.resolve(config.output)
   const state = loadState(outputDir)
   const client = new NotionClient()
-  const renderer = new NtxRenderer(client)
+  const renderer = new NtxRenderer(client, {
+    color: config.content?.color,
+    transformers: config.content?.transformers,
+  })
 
   const concurrency = config.sync?.concurrency ?? 5
   const doDeletions = config.sync?.deletions ?? true

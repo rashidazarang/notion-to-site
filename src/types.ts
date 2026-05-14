@@ -20,6 +20,16 @@ export interface NtxQueryFilter {
   or?: NtxQueryFilter[]
 }
 
+/** How Notion text/background colors are rendered in rich text. */
+export type ColorStrategy = 'drop' | 'inline' | 'class'
+
+/**
+ * A custom block transformer. Returns a markdown string for the block, or
+ * `false` to fall back to the built-in handling. Mirrors notion-to-md's
+ * `setCustomTransformer` contract.
+ */
+export type BlockTransformer = (block: any) => string | false | Promise<string | false>
+
 export interface NtxConfig {
   database: string
   /**
@@ -49,6 +59,18 @@ export interface NtxConfig {
   content?: {
     toc: boolean
     stripBackLinks: boolean
+    /**
+     * How to render Notion's text/background colors in rich text.
+     * `'drop'` (default) ignores them, `'inline'` emits `<span style>`,
+     * `'class'` emits `<span class="notion-color-...">`.
+     */
+    color?: ColorStrategy
+    /**
+     * Per-block-type rendering overrides. Keyed by Notion block type
+     * (e.g. `'paragraph'`, `'callout'`). A transformer returns a markdown
+     * string, or `false` to fall back to the built-in handling.
+     */
+    transformers?: Record<string, BlockTransformer>
   }
   watch?: {
     interval: number
