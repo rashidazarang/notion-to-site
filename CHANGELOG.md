@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.9.0
+
+First-class Next.js integration.
+
+### Added
+
+- **`notion-to-site/next`** — three pieces for Next.js App Router projects:
+  - `withNotion()` — a `next.config` wrapper that syncs the Notion content
+    before each build / dev start. A sync failure logs a warning and proceeds
+    with cached content, so a flaky network can't block a build.
+  - `getAllPages()` / `getPageBySlug()` — typed accessors over the generated
+    content module. Generic — pass your `NotionContent` type for full typing.
+  - `<NotionContent>` — a server component that renders a page body to HTML.
+- `next`, `react`, and `react-dom` are declared as optional peer dependencies;
+  `marked` is used for `<NotionContent>`'s markdown rendering.
+
+### Changed
+
+- `examples/nextjs` rewritten to use the integration (Next.js 15, App Router) —
+  the hand-rolled `lib/posts.ts` and the raw `<pre>` content dump are gone.
+
 ## 0.8.0
 
 First-class Astro integration.

@@ -1,6 +1,6 @@
 {
   "name": "notion-to-site",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Sync any Notion database to static markdown, MDX, or JSON files",
   "type": "module",
   "bin": {
@@ -20,6 +20,10 @@
     "./astro": {
       "types": "./dist/astro/index.d.ts",
       "import": "./dist/astro/index.js"
+    },
+    "./next": {
+      "types": "./dist/next/index.d.ts",
+      "import": "./dist/next/index.js"
     }
   },
   "scripts": {
@@ -57,20 +61,34 @@
     "commander": "^14.0.3",
     "dotenv": "^17.4.2",
     "gray-matter": "^4.0.3",
+    "marked": "^14.0.0",
     "notion-to-md": "^3.1.9",
     "sharp": "^0.34.5",
     "zod": "^4.4.3"
   },
   "peerDependencies": {
-    "astro": ">=5.0.0"
+    "astro": ">=5.0.0",
+    "next": ">=14.0.0",
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0"
   },
   "peerDependenciesMeta": {
     "astro": {
+      "optional": true
+    },
+    "next": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
       "optional": true
     }
   },
   "devDependencies": {
     "@types/node": "^25.6.0",
+    "@types/react": "^19.0.0",
     "typescript": "^6.0.3"
   }
 }

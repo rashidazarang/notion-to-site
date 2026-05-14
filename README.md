@@ -189,7 +189,25 @@ Your content starts here...
 
 ### Next.js
 
-Place your config output in `./content` and use a library like `gray-matter` to parse frontmatter at build time. If you use `contentlayer` or `next-mdx-remote`, set `adapter: 'mdx'` and point the output to your content directory. Images go in `./public/images` by default, so they are served statically.
+Wrap your `next.config` with `withNotion()` to sync on every build, then read content through the typed accessors and render it with the `<NotionContent>` server component:
+
+```js
+// next.config.mjs
+import { withNotion } from 'notion-to-site/next'
+export default withNotion({})
+```
+
+```tsx
+// app/posts/[slug]/page.tsx
+import { getPageBySlug, NotionContent } from 'notion-to-site/next'
+
+export default async function Post({ params }) {
+  const post = await getPageBySlug((await params).slug)
+  return <NotionContent body={post.content} />
+}
+```
+
+`getAllPages()` / `getPageBySlug()` are generic — pass your generated `NotionContent` type (typed mode) for full type safety. See [`examples/nextjs`](./examples/nextjs).
 
 ### Astro
 
