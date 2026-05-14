@@ -22,6 +22,13 @@ export interface NtxQueryFilter {
 
 export interface NtxConfig {
   database: string
+  /**
+   * Explicit data source ID. As of Notion API version 2025-09-03 a database
+   * can contain more than one data source; set this to pick a specific one.
+   * Optional — with a single data source (the common case) it is resolved
+   * automatically from `database`.
+   */
+  dataSource?: string
   output: string
   adapter: 'markdown' | 'mdx' | 'json'
   author?: string

@@ -135,11 +135,13 @@ async function runSync(opts: { incremental?: boolean; db?: string }): Promise<vo
   const databaseId = opts.db ?? config.database
 
   // ── Pass 1: collect all pages + build slugMap ────────────────────────────
-  const queryOpts = config.query
-    ? { filter: config.query.filter, pageSize: config.query.page_size }
-    : undefined
-  if (queryOpts?.filter) {
-    console.log(chalk.gray(`Fetching page list with filter…`))
+  const queryOpts = {
+    filter: config.query?.filter,
+    pageSize: config.query?.page_size,
+    dataSource: config.dataSource,
+  }
+  if (queryOpts.filter) {
+    console.log(chalk.gray('Fetching page list with filter…'))
   } else {
     console.log(chalk.gray('Fetching page list…'))
   }

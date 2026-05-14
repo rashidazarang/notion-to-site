@@ -42,3 +42,58 @@ test('NotionClient: accepts an explicit API key', () => {
     if (orig !== undefined) process.env.NOTION_API_KEY = orig
   }
 })
+
+test('resolveDataSource: resolves a database to its data source and caches it', async () => {
+  const client = new NotionClient({ apiKey: 'ntn_test_key' })
+  let retrieveCalls = 0
+  client.notion = {
+    databases: {
+      retrieve: async ({ database_id }) => {
+        retrieveCalls++
+        return {
+          object: 'database',
+          id: database_id,
+          data_sources: [{ id: 'ds-123', name: 'Posts' }],
+        }
+      },
+    },
+  }
+  const first = await client.resolveDataSource('db-abc')
+  const second = await client.resolveDataSource('db-abc')
+  assert.equal(first, 'ds-123')
+  assert.equal(second, 'ds-123')
+  assert.equal(retrieveCalls, 1, 'the second call should be served from the cache')
+})
+
+test('resolveDataSource: an explicit override skips the API call', async () => {
+  const client = new NotionClient({ apiKey: 'ntn_test_key' })
+  let called = false
+  client.notion = {
+    databases: {
+      retrieve: async () => {
+        called = true
+        return {}
+      },
+    },
+  }
+  const id = await client.resolveDataSource('db-abc', 'ds-explicit')
+  assert.equal(id, 'ds-explicit')
+  assert.equal(called, false)
+})
+
+test('resolveDataSource: throws when the database has no data sources', async () => {
+  const client = new NotionClient({ apiKey: 'ntn_test_key' })
+  client.notion = {
+    databases: {
+      retrieve: async ({ database_id }) => ({
+        object: 'database',
+        id: database_id,
+        data_sources: [],
+      }),
+    },
+  }
+  await assert.rejects(
+    () => client.resolveDataSource('db-empty'),
+    /no accessible data sources/,
+  )
+})
