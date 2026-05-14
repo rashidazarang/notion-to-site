@@ -1,9 +1,13 @@
 import * as fs from 'fs'
 import * as path from 'path'
-import type { PostFrontmatter } from '../schema.js'
 
 export class JsonAdapter {
-  write(slug: string, frontmatter: PostFrontmatter, content: string, outputDir: string): void {
+  write(
+    slug: string,
+    frontmatter: Record<string, any>,
+    content: string,
+    outputDir: string,
+  ): void {
     fs.mkdirSync(outputDir, { recursive: true })
     const outputPath = path.join(outputDir, slug + '.json')
 

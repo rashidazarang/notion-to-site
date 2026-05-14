@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .nts-state.json
+.notion-to-site/
 *.env
 .env*
 !.env.example

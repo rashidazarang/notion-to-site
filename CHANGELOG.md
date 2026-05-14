@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.6.0
+
+Typed content model — `notion-to-site` can now introspect *your* Notion
+database and generate TypeScript types from its real property schema, instead
+of forcing every database into a fixed blog shape. Opt-in; the default is
+unchanged.
+
+### Added
+
+- **`schema.mode: 'typed'`** — introspects the data source schema, generates a
+  TypeScript module (a Zod schema plus its inferred type), and writes a flat
+  frontmatter shape that faithfully mirrors your database's properties. The
+  default stays `'legacy'` (the existing blog-shaped nested frontmatter), so
+  existing projects are untouched.
+- **`nts types`** — a command that generates the typed schema module on its
+  own. A typed `nts sync` also refreshes it on every run.
+- **`schema.typesOutput`** config — where the generated module is written
+  (default `./.notion-to-site/types.ts`).
+- Programmatic exports for the type generator: `introspectSchema`,
+  `propertyToTypes`, `emitTypes`, `extractPropertiesTyped`.
+
+### Changed
+
+- Output adapters now accept any frontmatter shape, not just the legacy one.
+  H1-title injection moved from the adapters into the sync step so both schema
+  modes share it.
+- `nts validate` and `nts status` are schema-mode aware.
+
+### Notes
+
+- Type generation is honest about what Notion's API can't tell it statically:
+  `rollup` results are `unknown` and `formula` results are a broad union.
+  `select` / `multi_select` / `status` become exact literal unions.
+- Relations are emitted as `string[]` of page IDs — resolving them to titles
+  would invite cross-data-source recursion, so it is a deliberate non-goal.
+
 ## 0.5.0
 
 Renderer fidelity pass — a shared rich-text serializer replaces the lossy

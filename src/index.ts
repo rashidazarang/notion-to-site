@@ -22,7 +22,17 @@ export {
 export { MarkdownAdapter } from './adapters/markdown.js'
 export { MdxAdapter } from './adapters/mdx.js'
 export { JsonAdapter } from './adapters/json.js'
-export { PostFrontmatterSchema, validateFrontmatter, extractProperties } from './schema.js'
+export {
+  PostFrontmatterSchema,
+  validateFrontmatter,
+  extractProperties,
+  extractPropertiesTyped,
+} from './schema.js'
 export type { PostFrontmatter, NotionPageProperties } from './schema.js'
+export { introspectSchema } from './typegen/introspect.js'
+export type { NtsSchema, NtsPropertySchema } from './typegen/introspect.js'
+export { propertyToTypes } from './typegen/map.js'
+export type { PropertyTypeMapping } from './typegen/map.js'
+export { emitTypes } from './typegen/emit.js'
 export { loadConfig } from './config.js'
 export type { NtxConfig, BlockTransformer, ColorStrategy } from './types.js'

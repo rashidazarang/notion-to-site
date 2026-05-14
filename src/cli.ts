@@ -17,8 +17,16 @@ import { loadState, saveState, needsUpdate, recordPage } from './core/state.js'
 import { MarkdownAdapter } from './adapters/markdown.js'
 import { MdxAdapter } from './adapters/mdx.js'
 import { JsonAdapter } from './adapters/json.js'
-import { extractProperties, PostFrontmatterSchema, validateFrontmatter } from './schema.js'
+import {
+  extractProperties,
+  extractPropertiesTyped,
+  PostFrontmatterSchema,
+  validateFrontmatter,
+} from './schema.js'
 import type { PostFrontmatter } from './schema.js'
+import { introspectSchema, type NtsSchema } from './typegen/introspect.js'
+import { emitTypes } from './typegen/emit.js'
+import type { NtxConfig } from './types.js'
 import {
   detectLanguage,
   extractComment,
@@ -109,6 +117,78 @@ function makeLimiter(concurrency: number) {
   }
 }
 
+// ── Frontmatter builders ─────────────────────────────────────────────────────
+
+function buildLegacyFrontmatter(
+  page: any,
+  slug: string,
+  content: string,
+  configOutput: string,
+  configAuthor: string,
+): { frontmatter: PostFrontmatter; title: string } {
+  const props = extractProperties(page)
+  const language = props.language || detectLanguage(content)
+  const comment = extractComment(content, props.title)
+  const description = props.description || extractDescription(content)
+  const frontmatter: PostFrontmatter = {
+    id: slug,
+    path: `/${configOutput.replace(/^\.\//, '')}/${slug}.md`,
+    type: props.post_type?.toLowerCase() || 'post',
+    intent: '',
+    version: '1.0',
+    created: page.created_time.split('T')[0],
+    last_updated: page.last_edited_time.split('T')[0],
+    source: { platform: 'notion', page_id: page.id },
+    meta: {
+      title: props.title,
+      seo_title: props.seo_title || props.title,
+      author: props.author || configAuthor,
+      description,
+      canonical: props.canonical,
+      category: props.category,
+      main_tag: props.main_tag,
+      tags: props.tags,
+      featured: props.featured,
+      featured_at: props.featured_at,
+      language,
+      post_type: props.post_type,
+      status: props.status,
+      reading_time: computeReadingTime(content),
+      word_count: computeWordCount(content),
+      comment,
+      cover_image: props.cover_image,
+      domain_tags: props.domain_tags,
+    },
+  }
+  return { frontmatter, title: props.title }
+}
+
+function buildTypedFrontmatter(
+  page: any,
+  slug: string,
+  schema: NtsSchema,
+): { frontmatter: Record<string, any>; title: string } {
+  const props = extractPropertiesTyped(page, schema)
+  const title = String(props[schema.titleProperty] ?? '')
+  // `_id` (the slug) and `_notion_id` are nts-managed; user properties stay flat.
+  return { frontmatter: { ...props, _id: slug, _notion_id: page.id }, title }
+}
+
+/** Introspects the data source schema and writes the generated types module. */
+async function generateTypes(
+  config: NtxConfig,
+  client: NotionClient,
+  databaseId: string,
+): Promise<NtsSchema> {
+  const dataSourceId = await client.resolveDataSource(databaseId, config.dataSource)
+  const rawProps = await client.retrieveDataSourceSchema(dataSourceId)
+  const schema = introspectSchema(dataSourceId, rawProps)
+  const typesPath = path.resolve(config.schema?.typesOutput ?? './.notion-to-site/types.ts')
+  fs.mkdirSync(path.dirname(typesPath), { recursive: true })
+  fs.writeFileSync(typesPath, emitTypes(schema), 'utf-8')
+  return schema
+}
+
 // ── Sync ──────────────────────────────────────────────────────────────────────
 
 async function runSync(opts: { incremental?: boolean; db?: string }): Promise<void> {
@@ -137,6 +217,18 @@ async function runSync(opts: { incremental?: boolean; db?: string }): Promise<vo
 
   const databaseId = opts.db ?? config.database
 
+  // ── Schema mode ──────────────────────────────────────────────────────────
+  const mode = config.schema?.mode ?? 'legacy'
+  let ntsSchema: NtsSchema | undefined
+  if (mode === 'typed') {
+    console.log(chalk.gray('Introspecting Notion database schema…'))
+    ntsSchema = await generateTypes(config, client, databaseId)
+    const typesPath = path.resolve(config.schema?.typesOutput ?? './.notion-to-site/types.ts')
+    console.log(
+      chalk.gray(`Generated types for ${ntsSchema.properties.length} properties → ${typesPath}`),
+    )
+  }
+
   // ── Pass 1: collect all pages + build slugMap ────────────────────────────
   const queryOpts = {
     filter: config.query?.filter,
@@ -151,10 +243,20 @@ async function runSync(opts: { incremental?: boolean; db?: string }): Promise<vo
   const allPages: { page: any; slug: string }[] = []
 
   for await (const page of client.paginateDatabase(databaseId, queryOpts)) {
-    const props = extractProperties(page)
-    if (!props.title) continue
-    // Prefer Notion slug property, fall back to slugified title
-    const slug = props.slug ?? slugify(props.title)
+    let slug: string | null = null
+    if (mode === 'typed' && ntsSchema) {
+      // Typed mode never guesses — the slug comes from the title property.
+      const title = String(
+        extractPropertiesTyped(page, ntsSchema)[ntsSchema.titleProperty] ?? '',
+      )
+      if (!title) continue
+      slug = slugify(title)
+    } else {
+      const props = extractProperties(page)
+      if (!props.title) continue
+      // Prefer a Notion slug property, fall back to the slugified title.
+      slug = props.slug ?? slugify(props.title)
+    }
     if (slug) allPages.push({ page, slug })
   }
 
@@ -219,52 +321,21 @@ async function runSync(opts: { incremental?: boolean; db?: string }): Promise<vo
           }
         }
 
-        // Property extraction
-        const props = extractProperties(page)
-        const language = props.language || detectLanguage(content)
-        const comment = extractComment(content, props.title)
-        const description = props.description || extractDescription(content)
-        const reading_time = computeReadingTime(content)
-        const word_count = computeWordCount(content)
-        const author = props.author || configAuthor
+        // Build frontmatter for the active schema mode.
+        const { frontmatter, title } =
+          mode === 'typed' && ntsSchema
+            ? buildTypedFrontmatter(page, slug, ntsSchema)
+            : buildLegacyFrontmatter(page, slug, content, config.output, configAuthor)
 
-        const createdDate = page.created_time.split('T')[0]
-        const lastEditedDate = page.last_edited_time.split('T')[0]
-
-        const frontmatter: PostFrontmatter = {
-          id: slug,
-          path: `/${config.output.replace(/^\.\//, '')}/${slug}.md`,
-          type: props.post_type?.toLowerCase() || 'post',
-          intent: '',
-          version: '1.0',
-          created: createdDate,
-          last_updated: lastEditedDate,
-          source: { platform: 'notion', page_id: page.id },
-          meta: {
-            title: props.title,
-            seo_title: props.seo_title || props.title,
-            author,
-            description,
-            canonical: props.canonical,
-            category: props.category,
-            main_tag: props.main_tag,
-            tags: props.tags,
-            featured: props.featured,
-            featured_at: props.featured_at,
-            language,
-            post_type: props.post_type,
-            status: props.status,
-            reading_time,
-            word_count,
-            comment,
-            cover_image: props.cover_image,
-            domain_tags: props.domain_tags,
-          },
+        if (config.schema.strict && mode === 'legacy') {
+          validateFrontmatter(frontmatter as PostFrontmatter)
         }
 
-        if (config.schema.strict) validateFrontmatter(frontmatter)
+        // Inject an H1 from the title if the content doesn't already open with one.
+        const hasH1 = /^#\s/.test(content.trimStart())
+        const finalContent = hasH1 ? content : `# ${title}\n\n${content}`
 
-        adapter.write(slug, frontmatter, content, outputDir)
+        adapter.write(slug, frontmatter, finalContent, outputDir)
 
         recordPage(state, {
           pageId: page.id,
@@ -373,6 +444,20 @@ program
   })
 
 program
+  .command('types')
+  .description('Generate TypeScript types from your Notion database schema')
+  .action(async () => {
+    const config = await loadConfig()
+    const schema = await generateTypes(config, new NotionClient(), config.database)
+    const typesPath = path.resolve(config.schema?.typesOutput ?? './.notion-to-site/types.ts')
+    console.log(
+      chalk.green(
+        `✓ Generated types for ${schema.properties.length} properties → ${typesPath}`,
+      ),
+    )
+  })
+
+program
   .command('watch')
   .description('Poll and incrementally sync on interval')
   .option('--interval <seconds>', 'Poll interval in seconds', '60')
@@ -400,6 +485,7 @@ program
   .description('Validate all output files against Zod schema')
   .action(async () => {
     const config = await loadConfig()
+    const mode = config.schema?.mode ?? 'legacy'
     const outputDir = path.resolve(config.output)
     const ext = config.adapter === 'mdx' ? '.mdx' : config.adapter === 'json' ? '.json' : '.md'
 
@@ -428,6 +514,19 @@ program
         data = matter(raw).data
       }
 
+      if (mode === 'typed') {
+        // Typed mode: the generated Zod schema lives in the consumer's
+        // project, so here we just confirm the file parses and carries its
+        // nts identity field.
+        if (data && typeof data === 'object' && '_id' in (data as Record<string, unknown>)) {
+          console.log(chalk.green(`✓ ${slug}`))
+        } else {
+          console.log(chalk.red(`✗ ${slug}: missing _id`))
+          failures++
+        }
+        continue
+      }
+
       const result = PostFrontmatterSchema.safeParse(data)
       if (result.success) {
         console.log(chalk.green(`✓ ${slug}`))
@@ -447,12 +546,14 @@ program
   .description('Show sync state and statistics')
   .action(async () => {
     const config = await loadConfig()
+    const mode = config.schema?.mode ?? 'legacy'
     const outputDir = path.resolve(config.output)
     const state = loadState(outputDir)
     const ext = config.adapter === 'mdx' ? '.mdx' : config.adapter === 'json' ? '.json' : '.md'
 
     console.log(chalk.bold('\nnts status'))
     console.log(`  Output dir:     ${outputDir}`)
+    console.log(`  Schema mode:    ${mode}`)
     console.log(`  Last full sync: ${state.lastFullSync ?? 'never'}`)
     console.log(`  Tracked pages:  ${Object.keys(state.pages).length}`)
 
@@ -460,19 +561,24 @@ program
     for (const entry of Object.values(state.pages)) {
       const fp = path.join(outputDir, entry.slug + ext)
       if (!fs.existsSync(fp)) { stale++; continue }
-      try {
-        const raw = fs.readFileSync(fp, 'utf-8')
-        const data: any = ext === '.json'
-          ? JSON.parse(raw).frontmatter
-          : ext === '.mdx'
-            ? (() => { const m = raw.match(/export const meta = (\{[\s\S]*?\n\})/); return m ? JSON.parse(m[1]) : {} })()
-            : matter(raw).data
-        if (data?.meta?.status === 'Published') published++; else other++
-      } catch { other++ }
+      // The Published / Other breakdown is specific to the legacy schema shape.
+      if (mode === 'legacy') {
+        try {
+          const raw = fs.readFileSync(fp, 'utf-8')
+          const data: any = ext === '.json'
+            ? JSON.parse(raw).frontmatter
+            : ext === '.mdx'
+              ? (() => { const m = raw.match(/export const meta = (\{[\s\S]*?\n\})/); return m ? JSON.parse(m[1]) : {} })()
+              : matter(raw).data
+          if (data?.meta?.status === 'Published') published++; else other++
+        } catch { other++ }
+      }
     }
 
-    console.log(`  Published:      ${published}`)
-    console.log(`  Other status:   ${other}`)
+    if (mode === 'legacy') {
+      console.log(`  Published:      ${published}`)
+      console.log(`  Other status:   ${other}`)
+    }
     console.log(`  Stale entries:  ${stale}\n`)
   })
 

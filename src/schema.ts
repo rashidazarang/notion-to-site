@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { PageObjectResponse } from '@notionhq/client'
+import type { NtsSchema } from './typegen/introspect.js'
 
 const PostSourceSchema = z.object({
   platform: z.literal('notion'),
@@ -224,4 +225,97 @@ export function extractProperties(page: PageObjectResponse): NotionPagePropertie
     language, cover_image, author, description, seo_title, canonical, post_type,
     domain_tags,
   }
+}
+
+// ── Typed extraction (schema.mode: 'typed') ───────────────────────────────────
+//
+// Unlike `extractProperties` above, which guesses property names to fit a
+// fixed blog schema, this reads each property by its *real* name and *real*
+// type from an introspected `NtsSchema` — so the output faithfully mirrors
+// the user's own Notion database.
+
+// Property types whose generated TS type is a non-nullable `string` / array —
+// a missing value must default to `''` / `[]`, not `null`, to match the types.
+const TYPED_STRING_PROPS = new Set([
+  'title', 'rich_text', 'url', 'email', 'phone_number',
+  'created_time', 'last_edited_time', 'created_by', 'last_edited_by',
+])
+const TYPED_ARRAY_PROPS = new Set(['multi_select', 'people', 'files', 'relation'])
+
+/** Reads a single Notion property value into a plain, serializable shape. */
+function extractTypedValue(raw: any, type: string): unknown {
+  if (!raw) {
+    if (TYPED_STRING_PROPS.has(type)) return ''
+    if (TYPED_ARRAY_PROPS.has(type)) return []
+    if (type === 'checkbox') return false
+    return null
+  }
+  switch (type) {
+    case 'title':
+      return richTextToPlain(raw.title ?? [])
+    case 'rich_text':
+      return richTextToPlain(raw.rich_text ?? [])
+    case 'url':
+      return raw.url ?? ''
+    case 'email':
+      return raw.email ?? ''
+    case 'phone_number':
+      return raw.phone_number ?? ''
+    case 'number':
+      return raw.number ?? null
+    case 'checkbox':
+      return raw.checkbox === true
+    case 'select':
+      return raw.select?.name ?? null
+    case 'status':
+      return raw.status?.name ?? null
+    case 'multi_select':
+      return (raw.multi_select ?? []).map((o: any) => o.name)
+    case 'date':
+      return raw.date ? { start: raw.date.start, end: raw.date.end ?? null } : null
+    case 'people':
+      return (raw.people ?? []).map((p: any) => p.name ?? p.id ?? '')
+    case 'files':
+      return (raw.files ?? []).map((f: any) => f.file?.url ?? f.external?.url ?? '')
+    case 'relation':
+      return (raw.relation ?? []).map((r: any) => r.id)
+    case 'formula': {
+      const f = raw.formula
+      if (!f) return null
+      if (f.type === 'date') return f.date?.start ?? null
+      return f[f.type] ?? null
+    }
+    case 'rollup':
+      return raw.rollup ?? null
+    case 'created_time':
+      return raw.created_time ?? ''
+    case 'last_edited_time':
+      return raw.last_edited_time ?? ''
+    case 'created_by':
+      return raw.created_by?.name ?? raw.created_by?.id ?? ''
+    case 'last_edited_by':
+      return raw.last_edited_by?.name ?? raw.last_edited_by?.id ?? ''
+    case 'unique_id':
+      return raw.unique_id
+        ? { prefix: raw.unique_id.prefix ?? null, number: raw.unique_id.number ?? null }
+        : null
+    default:
+      return null
+  }
+}
+
+/**
+ * Extracts every property of a page, keyed by its real Notion name, according
+ * to an introspected schema. The result matches the types emitted by
+ * `emitTypes` for the same schema.
+ */
+export function extractPropertiesTyped(
+  page: PageObjectResponse,
+  schema: NtsSchema,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const prop of schema.properties) {
+    out[prop.name] = extractTypedValue(page.properties[prop.name], prop.type)
+  }
+  return out
 }

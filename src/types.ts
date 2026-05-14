@@ -51,6 +51,17 @@ export interface NtxConfig {
   }
   schema: {
     strict: boolean
+    /**
+     * `'legacy'` (default) keeps the blog-shaped nested frontmatter. `'typed'`
+     * introspects your Notion database, generates TypeScript types from its
+     * real property schema, and emits a flat, faithful frontmatter shape.
+     */
+    mode?: 'legacy' | 'typed'
+    /**
+     * Where `nts types` (and a typed `nts sync`) writes the generated schema
+     * module. Default `'./.notion-to-site/types.ts'`.
+     */
+    typesOutput?: string
   }
   sync?: {
     concurrency: number
