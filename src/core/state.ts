@@ -16,7 +16,7 @@ export interface NtxState {
 }
 
 export function loadState(outputDir: string): NtxState {
-  const filePath = path.join(outputDir, '.ntx-state.json')
+  const filePath = path.join(outputDir, '.nts-state.json')
   if (!fs.existsSync(filePath)) {
     return { version: 1, lastFullSync: null, pages: {} }
   }
@@ -25,7 +25,7 @@ export function loadState(outputDir: string): NtxState {
 }
 
 export function saveState(outputDir: string, state: NtxState): void {
-  const filePath = path.join(outputDir, '.ntx-state.json')
+  const filePath = path.join(outputDir, '.nts-state.json')
   const tmpPath = filePath + '.tmp'
   fs.writeFileSync(tmpPath, JSON.stringify(state, null, 2), 'utf-8')
   fs.renameSync(tmpPath, filePath)

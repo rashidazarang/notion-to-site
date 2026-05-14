@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import dotenv from 'dotenv'
-dotenv.config()
-dotenv.config({ path: '.env.local', override: true })
+dotenv.config({ quiet: true })
+dotenv.config({ path: '.env.local', override: true, quiet: true })
 
 import { Command } from 'commander'
 import chalk from 'chalk'
@@ -19,21 +19,17 @@ import { MdxAdapter } from './adapters/mdx.js'
 import { JsonAdapter } from './adapters/json.js'
 import { extractProperties, PostFrontmatterSchema, validateFrontmatter } from './schema.js'
 import type { PostFrontmatter } from './schema.js'
-import { detectLanguage, extractComment } from './pipeline/content.js'
-
-// ── Slug ──────────────────────────────────────────────────────────────────────
-
-function slugify(title: string): string {
-  return title
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')  // strip diacritics
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .trim()
-    .replace(/^-+|-+$/g, '')
-}
+import {
+  detectLanguage,
+  extractComment,
+  slugify,
+  resolveNotionLinks,
+  stripBackLinks,
+  generateToc,
+  extractDescription,
+  computeReadingTime,
+  computeWordCount,
+} from './pipeline/content.js'
 
 // ── Image resolution ──────────────────────────────────────────────────────────
 
@@ -72,87 +68,6 @@ async function resolveImagePlaceholders(
     }
   }
   return out
-}
-
-// ── Internal link resolution ──────────────────────────────────────────────────
-
-function resolveNotionLinks(content: string, slugMap: Map<string, string>, linkPrefix: string): string {
-  return content.replace(/\(\/([a-f0-9-]{32,36})([^)]*)\)/g, (_match, pageId, rest) => {
-    const hexId = pageId.replace(/-/g, '')
-    const slug = slugMap.get(hexId) ?? slugMap.get(pageId)
-    if (slug) return `(${linkPrefix}/${slug}${rest})`
-    return `(${linkPrefix}/${hexId}${rest})`
-  })
-}
-
-// ── Back-link stripping ───────────────────────────────────────────────────────
-
-// Matches any line that is purely a back-navigation element containing ← ↩ ◀
-function isBackLink(line: string): boolean {
-  const s = line.trim()
-  // Heading with arrow (e.g. ### [← Back...](url))
-  if (/^#{1,6}\s/.test(s) && /[←↩◀]/.test(s)) return true
-  // Bold-only back text: **← Go back**
-  if (/^\*{1,3}[←↩◀]/.test(s)) return true
-  // Link with arrow: [**← ...**](url) or [← ...](url), possibly followed by another link fragment
-  if (/^\[[\*_]*[←↩◀]/.test(s)) return true
-  return false
-}
-
-function stripBackLinks(content: string): string {
-  return content
-    .split('\n')
-    .filter(line => !isBackLink(line))
-    .join('\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
-}
-
-// ── TOC generation ────────────────────────────────────────────────────────────
-
-function generateToc(content: string): string {
-  const headings = content
-    .split('\n')
-    .filter(l => /^#{2,4}\s/.test(l))
-  if (headings.length < 3) return ''
-
-  const items = headings.map(h => {
-    const m = h.match(/^(#{2,4})\s+(.+)$/)
-    if (!m) return null
-    const level = m[1].length - 2
-    const text = m[2].replace(/\*\*?|__?/g, '').trim()
-    const anchor = text.toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-')
-    return `${'  '.repeat(level)}- [${text}](#${anchor})`
-  }).filter(Boolean)
-
-  if (items.length === 0) return ''
-  return `## Contents\n\n${items.join('\n')}\n\n`
-}
-
-// ── Content helpers ───────────────────────────────────────────────────────────
-
-function extractDescription(content: string): string {
-  for (const line of content.split('\n')) {
-    const s = line.trim()
-    if (!s || s.startsWith('#') || s.startsWith('!') || s.startsWith('>') ||
-        s.startsWith('[') || s.startsWith('|') || s.startsWith('<')) continue
-    const plain = s
-      .replace(/\*\*?([^*]+)\*\*?/g, '$1')
-      .replace(/`[^`]+`/g, '')
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-      .trim()
-    if (plain.length > 20) return plain.slice(0, 280)
-  }
-  return ''
-}
-
-function computeReadingTime(content: string): number {
-  const words = content.trim().split(/\s+/).length
-  return Math.max(1, Math.ceil(words / 200))
-}
-
-function computeWordCount(content: string): number {
-  return content.trim().split(/\s+/).filter(Boolean).length
 }
 
 // ── Parallel limiter ─────────────────────────────────────────────────────────
@@ -376,11 +291,15 @@ async function runSync(opts: { incremental?: boolean; db?: string }): Promise<vo
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
 
+const pkg = JSON.parse(
+  fs.readFileSync(new URL('../package.json', import.meta.url), 'utf-8'),
+) as { version: string }
+
 const program = new Command()
 program
   .name('nts')
   .description('Notion to Site — sync any Notion database to local content files')
-  .version('0.1.0')
+  .version(pkg.version)
 
 program
   .command('init')
@@ -414,12 +333,7 @@ program
   .option('--incremental', 'Only sync pages changed since last run', false)
   .option('--db <id>', 'Override the database ID from config')
   .action(async (opts) => {
-    try {
-      await runSync(opts)
-    } catch (err: any) {
-      console.error(chalk.red(`Error: ${err.message}`))
-      process.exit(1)
-    }
+    await runSync(opts)
   })
 
 program
@@ -519,4 +433,7 @@ program
     console.log(`  Stale entries:  ${stale}\n`)
   })
 
-program.parse(process.argv)
+program.parseAsync(process.argv).catch((err: any) => {
+  console.error(chalk.red(`Error: ${err.message}`))
+  process.exit(1)
+})

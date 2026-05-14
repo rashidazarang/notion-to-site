@@ -8,10 +8,16 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "CHANGELOG.md"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "prepublishOnly": "npm run build"
+    "pretest": "npm run build",
+    "test": "node --test test/*.test.js",
+    "prepublishOnly": "npm test"
   },
   "engines": {
     "node": ">=18"

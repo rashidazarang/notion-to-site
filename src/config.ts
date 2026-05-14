@@ -9,8 +9,6 @@ export async function loadConfig(cwd?: string): Promise<NtxConfig> {
   const candidates = [
     path.join(dir, 'nts.config.js'),
     path.join(dir, 'nts.config.ts'),
-    path.join(dir, 'ntx.config.js'),
-    path.join(dir, 'ntx.config.ts'),
   ]
 
   const targetPath = candidates.find(p => fs.existsSync(p))

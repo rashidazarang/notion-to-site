@@ -4,7 +4,18 @@ export { loadState, saveState, needsUpdate, updatePageState } from './core/state
 export type { NtxState, PageState } from './core/state.js'
 export { processImage } from './pipeline/images.js'
 export type { ImageProcessOptions, ImageResult } from './pipeline/images.js'
-export { extractComment, detectLanguage, stripMarkdownInline } from './pipeline/content.js'
+export {
+  extractComment,
+  detectLanguage,
+  stripMarkdownInline,
+  slugify,
+  resolveNotionLinks,
+  stripBackLinks,
+  generateToc,
+  extractDescription,
+  computeReadingTime,
+  computeWordCount,
+} from './pipeline/content.js'
 export { MarkdownAdapter } from './adapters/markdown.js'
 export { MdxAdapter } from './adapters/mdx.js'
 export { JsonAdapter } from './adapters/json.js'

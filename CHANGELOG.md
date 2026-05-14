@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.2.0
+
+### Added
+
+- `query.filter` config — sync only a subset of a database. The filter object is forwarded to Notion's `databases.query` endpoint as-is, so the full filter syntax (including `and` / `or` composers) is supported.
+- `query.page_size` config — override the default database query page size.
+- Domain Tags reader — a `Domain Tags` multi-select column is written to `meta.domain_tags` on every page, enabling render-time per-page routing when one Notion database feeds multiple sites.
+
+### Fixed
+
+- `nts --version` now reports the installed version instead of a hardcoded `0.1.0`.
+- Callout blocks now keep their Notion emoji icon — an operator-precedence bug previously dropped every emoji.
+- The incremental-sync state file is now consistently named `.nts-state.json` (the code was writing `.ntx-state.json`).
+- Suppressed `dotenv` startup logging that printed on every command.
+
+### Packaging
+
+- `npm publish` now ships the compiled `dist/` output. A `files` field was added so publishing is no longer affected by `dist/` being git-ignored.
+- Removed the undocumented `ntx.config.*` config filename alias; use `nts.config.js` or `nts.config.ts`.
+
 ## 0.1.0
 
 Initial release.

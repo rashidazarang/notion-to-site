@@ -1,6 +1,6 @@
 # Examples
 
-Minimal starter projects showing how to use [notion-to-site](https://github.com/your-org/notion-to-site) with popular frameworks. Each example is self-contained and copy-paste ready.
+Minimal starter projects showing how to use [notion-to-site](https://github.com/rashidazarang/notion-to-site) with popular frameworks. Each example is self-contained and copy-paste ready.
 
 Pick one, follow its README, and you'll have a working site powered by your Notion database in under five minutes.
 

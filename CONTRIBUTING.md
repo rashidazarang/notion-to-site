@@ -25,7 +25,7 @@ NOTION_API_KEY=ntn_your_key_here
 2. Create a config file pointing to your test database:
 
 ```bash
-cp nts.config.example.ts nts.config.js
+cp nts.config.example.js nts.config.js
 ```
 
 Edit `nts.config.js` and set your database ID.

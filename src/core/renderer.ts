@@ -29,7 +29,8 @@ export class NtxRenderer {
     // ── Callouts ─────────────────────────────────────────────────────────────
     this.n2m.setCustomTransformer('callout', async (block) => {
       const callout = (block as any).callout
-      const emoji = callout?.icon?.emoji ?? callout?.icon?.external?.url ? '' : '💡'
+      // Use the page's emoji icon when present; image/no icon falls back to 💡
+      const emoji = callout?.icon?.emoji ?? '💡'
       const texts = callout?.rich_text?.map((t: any) => t.plain_text).join('') ?? ''
       return `> ${emoji} ${texts}`.trim()
     })

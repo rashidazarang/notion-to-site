@@ -1,0 +1,76 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+
+import { validateFrontmatter, PostFrontmatterSchema, extractProperties } from '../dist/index.js'
+
+const minimalFrontmatter = {
+  id: 'my-post',
+  path: '/content/my-post.md',
+  created: '2026-01-01',
+  last_updated: '2026-01-02',
+  source: { platform: 'notion', page_id: 'abc123' },
+  meta: { title: 'My Post' },
+}
+
+test('validateFrontmatter: accepts a minimal object and fills defaults', () => {
+  const parsed = validateFrontmatter(minimalFrontmatter)
+  assert.equal(parsed.meta.title, 'My Post')
+  assert.equal(parsed.type, 'post')
+  assert.equal(parsed.version, '1.0')
+  assert.equal(parsed.meta.status, 'Not started')
+  assert.equal(parsed.meta.post_type, 'Post')
+  assert.deepEqual(parsed.meta.tags, [])
+  assert.deepEqual(parsed.meta.domain_tags, [])
+  assert.equal(parsed.meta.reading_time, 1)
+})
+
+test('validateFrontmatter: rejects a missing title', () => {
+  assert.throws(() => validateFrontmatter({ ...minimalFrontmatter, meta: {} }))
+})
+
+test('validateFrontmatter: rejects a non-notion source platform', () => {
+  assert.throws(() =>
+    validateFrontmatter({
+      ...minimalFrontmatter,
+      source: { platform: 'wordpress', page_id: 'abc123' },
+    }),
+  )
+})
+
+test('PostFrontmatterSchema.safeParse: reports issues without throwing', () => {
+  const result = PostFrontmatterSchema.safeParse({ id: 'x' })
+  assert.equal(result.success, false)
+  assert.ok(result.error.issues.length > 0)
+})
+
+test('extractProperties: reads common Notion property types', () => {
+  const page = {
+    properties: {
+      Name: { type: 'title', title: [{ plain_text: 'Hello World' }] },
+      Status: { type: 'select', select: { name: 'Published' } },
+      Tags: { type: 'multi_select', multi_select: [{ name: 'a' }, { name: 'b' }] },
+      Featured: { type: 'checkbox', checkbox: true },
+      'Domain Tags': { type: 'multi_select', multi_select: [{ name: 'site-a' }] },
+    },
+    cover: { type: 'external', external: { url: 'https://x.com/cover.png' } },
+  }
+  const props = extractProperties(page)
+  assert.equal(props.title, 'Hello World')
+  assert.equal(props.status, 'Published')
+  assert.deepEqual(props.tags, ['a', 'b'])
+  assert.equal(props.main_tag, 'a')
+  assert.equal(props.featured, true)
+  assert.deepEqual(props.domain_tags, ['site-a'])
+  assert.equal(props.cover_image, 'https://x.com/cover.png')
+})
+
+test('extractProperties: returns sane defaults for an empty page', () => {
+  const props = extractProperties({ properties: {}, cover: null })
+  assert.equal(props.title, '')
+  assert.equal(props.slug, null)
+  assert.equal(props.status, 'Not started')
+  assert.deepEqual(props.tags, [])
+  assert.equal(props.featured, false)
+  assert.equal(props.post_type, 'Post')
+  assert.deepEqual(props.domain_tags, [])
+})
