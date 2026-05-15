@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.1.2
+
+### Added
+
+- **Property-based tests for `renderRichText`** using `fast-check` — generates
+  thousands of valid `RichTextItemResponse` arrays (text, equation, and
+  user/page/date/link_preview mentions × every annotation combination × every
+  color strategy) and asserts the serializer never throws, always returns a
+  string, respects color strategies, applies annotations in the documented
+  nesting order, resolves page mentions correctly, and preserves item order.
+  No bugs surfaced across ~5,000 generated cases.
+
 ## 1.1.1
 
 ### Fixed

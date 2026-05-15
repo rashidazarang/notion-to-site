@@ -1,6 +1,6 @@
 {
   "name": "notion-to-site",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Sync any Notion database to static markdown, MDX, or JSON files",
   "type": "module",
   "bin": {
@@ -89,6 +89,7 @@
   "devDependencies": {
     "@types/node": "^25.6.0",
     "@types/react": "^19.0.0",
+    "fast-check": "^4.8.0",
     "typescript": "^6.0.3"
   }
 }
