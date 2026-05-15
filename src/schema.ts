@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { PageObjectResponse } from '@notionhq/client'
 import type { NtsSchema } from './typegen/introspect.js'
+import { slugify } from './pipeline/content.js'
 
 const PostSourceSchema = z.object({
   platform: z.literal('notion'),
@@ -93,15 +94,23 @@ export function extractProperties(page: PageObjectResponse): NotionPagePropertie
     title = richTextToPlain(titleProp.title)
   }
 
-  // Custom slug (overrides auto-slugify)
+  // Custom slug (overrides auto-slugify). Always passed through `slugify` —
+  // a user-set slug becomes part of the output filename, so a value like
+  // `../../etc/passwd` must not escape `outputDir`.
   let slug: string | null = null
   const slugProp = findProperty(props, ['Slug', 'slug', 'URL', 'url', 'super:slug'])
   if (slugProp?.type === 'rich_text') {
     const val = richTextToPlain(slugProp.rich_text).trim()
-    if (val) slug = val
+    if (val) {
+      const cleaned = slugify(val)
+      if (cleaned) slug = cleaned
+    }
   } else if (slugProp?.type === 'url') {
     const val = (slugProp.url ?? '').trim()
-    if (val) slug = val.replace(/^\/+/, '')
+    if (val) {
+      const cleaned = slugify(val.replace(/^\/+/, ''))
+      if (cleaned) slug = cleaned
+    }
   }
 
   // Status

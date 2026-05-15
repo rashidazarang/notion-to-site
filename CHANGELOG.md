@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.1
+
+### Fixed
+
+- **Path-traversal hardening for user-set slugs.** A custom slug from a Notion
+  `Slug` / `URL` property bypassed `slugify` and went straight into the output
+  filename, so a value like `../../etc/passwd` could escape `outputDir`. User-set
+  slugs are now passed through `slugify` (same sanitization the title path uses);
+  if the cleaned result is empty, the slug falls back to `slugify(title)`.
+
 ## 1.1.0
 
 Fulfills the P4b commitment — responsive image sizes and LQIP blur placeholders

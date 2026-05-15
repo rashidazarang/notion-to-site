@@ -74,3 +74,43 @@ test('extractProperties: returns sane defaults for an empty page', () => {
   assert.equal(props.post_type, 'Post')
   assert.deepEqual(props.domain_tags, [])
 })
+
+test('extractProperties: a user-set slug is sanitized — no path traversal', () => {
+  const page = {
+    properties: {
+      Name: { type: 'title', title: [{ plain_text: 'Whatever' }] },
+      Slug: { type: 'rich_text', rich_text: [{ plain_text: '../../etc/passwd' }] },
+    },
+    cover: null,
+  }
+  const props = extractProperties(page)
+  // The cleaned slug must not contain path separators or `..` traversals.
+  assert.ok(props.slug && !props.slug.includes('/'))
+  assert.ok(props.slug && !props.slug.includes('..'))
+  assert.equal(props.slug, 'etcpasswd')
+})
+
+test('extractProperties: a custom slug from a URL property is cleaned the same way', () => {
+  const page = {
+    properties: {
+      Name: { type: 'title', title: [{ plain_text: 'X' }] },
+      URL: { type: 'url', url: '/blog/My Cool Post' },
+    },
+    cover: null,
+  }
+  const props = extractProperties(page)
+  assert.equal(props.slug, 'blogmy-cool-post')
+})
+
+test('extractProperties: a slug of only special characters falls back to null', () => {
+  const page = {
+    properties: {
+      Name: { type: 'title', title: [{ plain_text: 'X' }] },
+      Slug: { type: 'rich_text', rich_text: [{ plain_text: '....' }] },
+    },
+    cover: null,
+  }
+  const props = extractProperties(page)
+  // slugify('....') → '' → null fallback, so sync.ts will slugify(title) instead.
+  assert.equal(props.slug, null)
+})
