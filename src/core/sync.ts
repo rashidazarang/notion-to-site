@@ -60,27 +60,64 @@ export interface SyncOptions {
 
 // ── Image resolution ──────────────────────────────────────────────────────────
 
+interface ImagesConfig {
+  quality?: number
+  download: boolean
+  placeholder?: boolean
+  sizes?: number[]
+}
+
+interface ResolvedImages {
+  content: string
+  /** Canonical URL → content hash, persisted into `state.imageHashes`. */
+  hashes: Record<string, string>
+  /** Final `urlPath` → image metadata, for the global `images.json` manifest. */
+  metadata: Record<string, { placeholder?: string; sizes?: Array<{ width: number; urlPath: string }> }>
+}
+
 async function resolveImagePlaceholders(
   content: string,
   slug: string,
   imageDir: string,
-  quality: number = 80,
-  download: boolean = false,
-): Promise<string> {
+  imagesConfig: ImagesConfig,
+): Promise<ResolvedImages> {
   const { processImage, ImageFetchError } = await import('../pipeline/images.js')
   const placeholderRe = /!\[([^\]]*)\]\(ntx-img:[^:]+:([^)]+)\)/g
 
   const matches = [...content.matchAll(placeholderRe)]
-  if (matches.length === 0) return content
+  if (matches.length === 0) return { content, hashes: {}, metadata: {} }
 
+  const hashes: Record<string, string> = {}
+  const metadata: Record<string, { placeholder?: string; sizes?: Array<{ width: number; urlPath: string }> }> = {}
   let out = content
+
   for (const m of matches) {
     const caption = m[1]
     const rawUrl = decodeURIComponent(m[2])
-    if (download) {
+    if (imagesConfig.download) {
       try {
-        const result = await processImage({ url: rawUrl, outputDir: imageDir, quality })
+        const result = await processImage({
+          url: rawUrl,
+          outputDir: imageDir,
+          quality: imagesConfig.quality,
+          placeholder: imagesConfig.placeholder,
+          sizes: imagesConfig.sizes,
+        })
         out = out.replace(m[0], `![${caption}](${result.urlPath})`)
+        // Record canonical URL → hash for cross-run dedup knowledge.
+        try {
+          const u = new URL(rawUrl)
+          hashes[u.origin + u.pathname] = result.hash
+        } catch {
+          // Unparseable URL — skip the hash record.
+        }
+        // Capture placeholder/sizes metadata for the global manifest.
+        if (result.placeholder || result.sizes) {
+          metadata[result.urlPath] = {
+            ...(result.placeholder ? { placeholder: result.placeholder } : {}),
+            ...(result.sizes ? { sizes: result.sizes } : {}),
+          }
+        }
       } catch (err) {
         if (err instanceof ImageFetchError && err.transient) {
           // Transient failure — keep the image by falling back to the remote URL.
@@ -106,7 +143,7 @@ async function resolveImagePlaceholders(
       }
     }
   }
-  return out
+  return { content: out, hashes, metadata }
 }
 
 // ── Parallel limiter ─────────────────────────────────────────────────────────
@@ -297,6 +334,10 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
   const limit = makeLimiter(concurrency)
   const seenSlugs = new Set<string>()
   const pages: SyncedPage[] = []
+  // Accumulates `urlPath → { placeholder?, sizes? }` across all pages. Concurrent
+  // tasks write distinct (or value-identical) entries, so plain object writes
+  // are safe. Emitted as `.notion-to-site/images.json` after the sync.
+  const imageManifest: Record<string, { placeholder?: string; sizes?: Array<{ width: number; urlPath: string }> }> = {}
   let synced = 0
   let skipped = 0
   let failures = 0
@@ -315,13 +356,20 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
       try {
         let content = await renderer.renderPage(page.id)
 
-        content = await resolveImagePlaceholders(
+        const imageResult = await resolveImagePlaceholders(
           content,
           slug,
           path.resolve(config.images.outputDir),
-          config.images.quality ?? 80,
-          config.images.download,
+          {
+            quality: config.images.quality ?? 80,
+            download: config.images.download,
+            placeholder: config.images.placeholder,
+            sizes: config.images.sizes,
+          },
         )
+        content = imageResult.content
+        // Merge this page's image metadata into the global manifest.
+        Object.assign(imageManifest, imageResult.metadata)
         content = resolveNotionLinks(content, slugMap, linkPrefix)
         if (doStrip) content = stripBackLinks(content)
         if (doToc) {
@@ -355,7 +403,7 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
           slug,
           lastEditedTime: page.last_edited_time,
           outputPath: path.join(outputDir, slug + '.md'),
-          imageHashes: {},
+          imageHashes: imageResult.hashes,
         })
 
         synced++
@@ -407,6 +455,16 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
         ? { importPath: './types.js', typeName: 'NotionContent' }
         : { importPath: 'notion-to-site', typeName: 'PostFrontmatter' }
     emitContentModule(pages, moduleDir, typeRef)
+    // Emit the image manifest — `<NotionImage>` looks up placeholder + sizes
+    // by URL from this file. Skip when there is nothing to record.
+    if (Object.keys(imageManifest).length > 0) {
+      fs.mkdirSync(moduleDir, { recursive: true })
+      fs.writeFileSync(
+        path.join(moduleDir, 'images.json'),
+        JSON.stringify(imageManifest, null, 2),
+        'utf-8',
+      )
+    }
   }
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)

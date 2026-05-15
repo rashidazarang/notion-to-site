@@ -21,6 +21,9 @@ export default {
     outputDir: './public/images', // where downloaded images are saved
     format: 'webp', // 'webp' | 'original'
     quality: 80, // WebP quality, 1-100
+    // placeholder: true,             // emit a tiny base64 blur for each image
+    //                                // (~300 bytes; consumed by <NotionImage>)
+    // sizes: [400, 800, 1200],       // emit resized WebP variants for srcset
   },
 
   schema: {

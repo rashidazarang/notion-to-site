@@ -4,7 +4,13 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { getAllPages, getPageBySlug, withNotion, NotionContent } from '../dist/next/index.js'
+import {
+  getAllPages,
+  getPageBySlug,
+  withNotion,
+  NotionContent,
+  NotionImage,
+} from '../dist/next/index.js'
 
 function makeContentModule() {
   const dir = mkdtempSync(join(tmpdir(), 'nts-next-'))
@@ -64,4 +70,46 @@ test('NotionContent: renders a markdown body to an HTML div element', () => {
   assert.equal(el.type, 'div')
   assert.match(el.props.dangerouslySetInnerHTML.__html, /<h1[^>]*>Hello<\/h1>/)
   assert.match(el.props.dangerouslySetInnerHTML.__html, /<p>A paragraph\.<\/p>/)
+})
+
+test('NotionImage: falls back to a plain <img> when there is no manifest entry', () => {
+  // Empty temp dir → no images.json → graceful fallback.
+  const dir = mkdtempSync(join(tmpdir(), 'nts-img-noman-'))
+  try {
+    const el = NotionImage({ src: '/images/foo.webp', alt: 'x', manifestDir: dir })
+    assert.equal(el.type, 'img')
+    assert.equal(el.props.src, '/images/foo.webp')
+    assert.equal(el.props.alt, 'x')
+    assert.equal(el.props.srcSet, undefined)
+    assert.equal(el.props.style?.backgroundImage, undefined)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('NotionImage: uses placeholder + srcSet from the manifest', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'nts-img-man-'))
+  try {
+    writeFileSync(
+      join(dir, 'images.json'),
+      JSON.stringify({
+        '/images/abc.webp': {
+          placeholder: 'data:image/webp;base64,AAAA',
+          sizes: [
+            { width: 400, urlPath: '/images/abc-400.webp' },
+            { width: 800, urlPath: '/images/abc-800.webp' },
+          ],
+        },
+      }),
+      'utf-8',
+    )
+    const el = NotionImage({ src: '/images/abc.webp', alt: '', manifestDir: dir })
+    assert.equal(el.type, 'img')
+    assert.equal(el.props.src, '/images/abc.webp')
+    assert.equal(el.props.srcSet, '/images/abc-400.webp 400w, /images/abc-800.webp 800w')
+    assert.match(el.props.style.backgroundImage, /url\(data:image\/webp;base64,AAAA\)/)
+    assert.equal(el.props.style.backgroundSize, 'cover')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })

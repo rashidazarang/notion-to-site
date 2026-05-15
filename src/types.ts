@@ -58,6 +58,18 @@ export interface NtxConfig {
     outputDir: string
     format: 'webp' | 'original'
     quality: number
+    /**
+     * Generate a tiny base64 blur placeholder for every downloaded image.
+     * Surfaced via `.notion-to-site/images.json` for the `<NotionImage>`
+     * server component (Next.js integration) and any custom consumer.
+     */
+    placeholder?: boolean
+    /**
+     * Emit resized variants at the given widths (px) alongside the full-size
+     * webp. Never enlarges past the source. Each variant lives at
+     * `/images/<hash>-<width>.webp`; sizes never enlarge past the source.
+     */
+    sizes?: number[]
   }
   schema: {
     strict: boolean

@@ -135,3 +135,80 @@ test('processImage: dedups the same image across different signed URLs', () => {
     },
   )
 })
+
+test('processImage: placeholder option returns a base64 webp data URL', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'nts-ph-'))
+  return withMockedFetch(
+    async () => pngResponse(),
+    async () => {
+      try {
+        const result = await processImage({
+          url: 'https://x.example/img.png',
+          outputDir: dir,
+          placeholder: true,
+        })
+        assert.ok(result.placeholder, 'placeholder should be set')
+        assert.match(result.placeholder, /^data:image\/webp;base64,/)
+        assert.ok(result.placeholder.length < 4096, 'placeholder should be tiny (LQIP)')
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    },
+  )
+})
+
+test('processImage: sizes option emits resized variants beside the full-size file', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'nts-sz-'))
+  return withMockedFetch(
+    async () => pngResponse(),
+    async () => {
+      try {
+        const result = await processImage({
+          url: 'https://x.example/img.png',
+          outputDir: dir,
+          sizes: [10, 20],
+        })
+        assert.ok(Array.isArray(result.sizes))
+        assert.equal(result.sizes.length, 2)
+        assert.equal(result.sizes[0].width, 10)
+        assert.match(result.sizes[0].urlPath, /-10\.webp$/)
+        assert.equal(result.sizes[1].width, 20)
+        assert.match(result.sizes[1].urlPath, /-20\.webp$/)
+        for (const s of result.sizes) {
+          const fname = s.urlPath.split('/').pop()
+          assert.ok(existsSync(join(dir, fname)), `${fname} should exist on disk`)
+        }
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    },
+  )
+})
+
+test('processImage: derivatives can be generated on a cache hit', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'nts-cache-deriv-'))
+  let fetchCount = 0
+  return withMockedFetch(
+    async () => {
+      fetchCount++
+      return pngResponse()
+    },
+    async () => {
+      try {
+        // First call writes the full-size file, no placeholder requested.
+        await processImage({ url: 'https://x.example/img.png', outputDir: dir })
+        assert.equal(fetchCount, 1)
+        // Second call hits the cache for full-size but still derives the placeholder.
+        const second = await processImage({
+          url: 'https://x.example/img.png',
+          outputDir: dir,
+          placeholder: true,
+        })
+        assert.equal(fetchCount, 1, 'no second fetch — full-size was cached')
+        assert.match(second.placeholder, /^data:image\/webp;base64,/)
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    },
+  )
+})

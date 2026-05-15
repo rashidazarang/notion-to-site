@@ -70,6 +70,8 @@ Your content files will appear in `./content`.
 | `images.outputDir` | `string` | `'./public/images'` | Where to save downloaded images |
 | `images.format` | `'webp' \| 'original'` | `'webp'` | Convert images to WebP or keep original format |
 | `images.quality` | `number` | `80` | WebP compression quality (1-100) |
+| `images.placeholder` | `boolean` | `false` | Generate a base64 blur placeholder for each image — consumed by `<NotionImage>` |
+| `images.sizes` | `number[]` | none | Widths to emit as additional WebP variants for responsive `srcset` |
 | `schema.strict` | `boolean` | `false` | Validate frontmatter with Zod on every sync |
 | `schema.mode` | `'typed' \| 'legacy'` | `'typed'` | Frontmatter shape — see [Schema modes](#schema-modes) |
 | `schema.typesOutput` | `string` | `'./.notion-to-site/types.ts'` | Where typed mode writes the generated schema |

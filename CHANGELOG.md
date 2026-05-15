@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.1.0
+
+Fulfills the P4b commitment — responsive image sizes and LQIP blur placeholders
+land where an `<Image>` component can actually consume them. All new behavior
+is opt-in; the default sync is unchanged.
+
+### Added
+
+- **`images.placeholder: boolean`** — generates a tiny base64 WebP blur for
+  every downloaded image (~300 bytes), surfaced via the new manifest.
+- **`images.sizes: number[]`** — emits resized WebP variants at the given
+  widths alongside the full-size file (never enlarges past the source).
+- **`<NotionImage>`** server component (`notion-to-site/next`) — looks up the
+  placeholder + sizes by `src` from the manifest, renders the image with a
+  CSS blur background and a `srcSet` for responsive loading. Falls back to a
+  plain `<img>` when no manifest entry exists, so it is always safe to use.
+- **`.notion-to-site/images.json`** — emitted by `nts sync` when any image has
+  a placeholder or sizes. The manifest the `<NotionImage>` consumer reads.
+- **`state.imageHashes` is now actually populated** — finally fulfills the
+  dead data-model promise from 0.3.0. `recordPage` receives the canonical-URL
+  → content-hash map collected during image resolution, enabling future
+  orphaned-image cleanup.
+- `generatePlaceholder()` and the `ImageMetadata` type are exported from the
+  public API for custom consumers.
+
 ## 1.0.1
 
 ### Fixed
