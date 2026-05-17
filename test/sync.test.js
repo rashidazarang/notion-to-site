@@ -1,7 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
-import { buildContentModule, defineContent } from '../dist/index.js'
+import { buildContentModule, defineContent, emitContentModule } from '../dist/index.js'
 
 const pages = [
   { slug: 'beta', frontmatter: { title: 'Beta' }, content: '# Beta\n\nbody' },
@@ -45,6 +48,21 @@ test('buildContentModule: the generated js is valid ESM and round-trips the data
   assert.equal(mod.pages.length, 2)
   assert.equal(mod.pages[0].slug, 'alpha')
   assert.equal(mod.pagesBySlug.beta.frontmatter.title, 'Beta')
+})
+
+test('emitContentModule: marks the generated directory as ESM for Node 18', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'nts-content-module-'))
+  try {
+    emitContentModule(pages, dir, {
+      importPath: './types.js',
+      typeName: 'NotionContent',
+    })
+    assert.deepEqual(JSON.parse(readFileSync(join(dir, 'package.json'), 'utf-8')), {
+      type: 'module',
+    })
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })
 
 test('defineContent: returns the config unchanged (typed identity helper)', () => {

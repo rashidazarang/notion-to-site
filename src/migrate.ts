@@ -25,7 +25,7 @@ export function migrationAdvice(config: NtxConfig): MigrationAdvice {
     pinned: false,
     message: [
       'notion-to-site 1.0 changed the default schema mode to "typed".',
-      'Your nts.config.js does not set schema.mode, so `nts sync` will now',
+      'Your config file does not set schema.mode, so `nts sync` will now',
       'produce typed output — a flat frontmatter shape mirroring your Notion',
       'database — instead of the legacy nested `meta.*` shape.',
       '',

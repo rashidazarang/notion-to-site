@@ -30,10 +30,10 @@ Open your Notion database, click the `...` menu, then "Connections", and add you
 nts init
 ```
 
-This creates `nts.config.js` in your project. Open it and set your database ID:
+This creates `nts.config.mjs` in your project. Open it and set your database ID:
 
 ```js
-// nts.config.js
+// nts.config.mjs
 export default {
   database: 'your-database-id-here',
   output: './content',
@@ -105,7 +105,7 @@ Upgrading from 0.x? Run `nts migrate` — it checks whether your config pins
 To sync only a subset of a database, pass a Notion-shaped `filter` object. This forwards as-is to Notion's `databases.query` endpoint, so the [full filter syntax](https://developers.notion.com/reference/post-database-query-filter) is supported.
 
 ```js
-// nts.config.js — sync only pages tagged "tudatsu" on a "Domain Tags" multi-select
+// nts.config.mjs — sync only pages tagged "tudatsu" on a "Domain Tags" multi-select
 export default {
   database: 'YOUR_DB_ID',
   output: './content',
@@ -142,7 +142,7 @@ If your database has a `Domain Tags` multi-select column, its values are written
 
 | Command | Description |
 |---|---|
-| `nts init` | Create `nts.config.js` in the current directory |
+| `nts init` | Create `nts.config.mjs` in the current directory |
 | `nts sync` | Full sync of your Notion database to local files |
 | `nts sync --incremental` | Only sync pages changed since the last run |
 | `nts sync --db <id>` | Override the database ID from config |

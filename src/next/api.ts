@@ -9,6 +9,7 @@
  * const posts = await getAllPages<NotionContent>()
  * ```
  */
+import * as fs from 'fs'
 import * as path from 'path'
 import { pathToFileURL } from 'url'
 
@@ -20,14 +21,43 @@ export interface ContentPage<T = Record<string, any>> {
 
 const cache = new Map<string, ContentPage[]>()
 
+async function importContentModule(modPath: string): Promise<{ pages?: ContentPage[] }> {
+  const moduleDir = path.dirname(modPath)
+  const packagePath = path.join(moduleDir, 'package.json')
+
+  let isEsmPackage = false
+  try {
+    const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf-8')) as { type?: string }
+    isEsmPackage = packageJson.type === 'module'
+  } catch {
+    // Older generated content dirs did not include a package.json. Import those
+    // from source so Node 18 never tries to parse ESM as CommonJS first.
+  }
+
+  if (isEsmPackage) {
+    return import(/* webpackIgnore: true */ pathToFileURL(modPath).href)
+  }
+
+  const source = fs.readFileSync(modPath, 'utf-8')
+  const dataUrl = `data:text/javascript;charset=utf-8,${encodeURIComponent(source)}`
+  return import(/* webpackIgnore: true */ dataUrl)
+}
+
 async function loadPages(dir: string): Promise<ContentPage[]> {
   const cached = cache.get(dir)
   if (cached) return cached
 
   const modPath = path.resolve(process.cwd(), dir, 'index.js')
   let mod: { pages?: ContentPage[] }
+  if (!fs.existsSync(modPath)) {
+    throw new Error(
+      `notion-to-site: could not load the content module at ${modPath}. ` +
+        'Run `nts sync` first, or wrap your next.config with withNotion(). (file does not exist)',
+    )
+  }
+
   try {
-    mod = await import(pathToFileURL(modPath).href)
+    mod = await importContentModule(modPath)
   } catch (err: any) {
     throw new Error(
       `notion-to-site: could not load the content module at ${modPath}. ` +

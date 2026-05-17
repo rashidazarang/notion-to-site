@@ -65,4 +65,9 @@ export function emitContentModule(
   fs.mkdirSync(dir, { recursive: true })
   fs.writeFileSync(path.join(dir, 'index.js'), js, 'utf-8')
   fs.writeFileSync(path.join(dir, 'index.d.ts'), dts, 'utf-8')
+  fs.writeFileSync(
+    path.join(dir, 'package.json'),
+    JSON.stringify({ type: 'module' }, null, 2),
+    'utf-8',
+  )
 }

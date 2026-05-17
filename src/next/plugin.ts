@@ -14,7 +14,7 @@ import { loadConfig } from '../config.js'
 import type { NtxConfig } from '../types.js'
 
 export interface WithNotionOptions {
-  /** A config object, used instead of loading `nts.config.js`. */
+  /** A config object, used instead of loading `nts.config.mjs`. */
   config?: NtxConfig
   /** Sync only pages changed since the last run. Default `true`. */
   incremental?: boolean

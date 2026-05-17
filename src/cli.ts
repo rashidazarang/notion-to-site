@@ -28,14 +28,20 @@ program
 
 program
   .command('init')
-  .description('Create nts.config.js in the current directory')
+  .description('Create nts.config.mjs in the current directory')
   .action(async () => {
-    const target = path.join(process.cwd(), 'nts.config.js')
-    if (fs.existsSync(target)) {
-      console.error(chalk.red('nts.config.js already exists. Delete it first to reinitialize.'))
+    const cwd = process.cwd()
+    const target = path.join(cwd, 'nts.config.mjs')
+    const existing = ['nts.config.mjs', 'nts.config.js']
+      .map((name) => path.join(cwd, name))
+      .find((candidate) => fs.existsSync(candidate))
+    if (existing) {
+      console.error(
+        chalk.red(`${path.basename(existing)} already exists. Delete it first to reinitialize.`),
+      )
       process.exit(1)
     }
-    const template = `// nts.config.js — edit before running nts sync
+    const template = `// nts.config.mjs — edit before running nts sync
 export default {
   database: 'YOUR_NOTION_DATABASE_ID',
   output: './content',
@@ -51,7 +57,7 @@ export default {
 }
 `
     fs.writeFileSync(target, template, 'utf-8')
-    console.log(chalk.green('✓ Created nts.config.js — edit it before running nts sync'))
+    console.log(chalk.green('✓ Created nts.config.mjs — edit it before running nts sync'))
   })
 
 program

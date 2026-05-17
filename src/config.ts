@@ -7,13 +7,14 @@ export async function loadConfig(cwd?: string): Promise<NtxConfig> {
   const dir = cwd ?? process.cwd()
 
   const candidates = [
+    path.join(dir, 'nts.config.mjs'),
     path.join(dir, 'nts.config.js'),
     path.join(dir, 'nts.config.ts'),
   ]
 
   const targetPath = candidates.find(p => fs.existsSync(p))
   if (!targetPath) {
-    throw new Error(`No nts.config.js found in ${dir}. Run \`nts init\` to create one.`)
+    throw new Error(`No nts.config.mjs or nts.config.js found in ${dir}. Run \`nts init\` to create one.`)
   }
 
   try {
@@ -27,7 +28,7 @@ export async function loadConfig(cwd?: string): Promise<NtxConfig> {
     if (err.code === 'ERR_UNKNOWN_FILE_EXTENSION') {
       throw new Error(
         'Cannot import .ts config directly. Either compile it first (tsc), ' +
-          'or rename it to nts.config.js and use ES module syntax.',
+          'or rename it to nts.config.mjs and use ES module syntax.',
       )
     }
     throw err

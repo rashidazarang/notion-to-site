@@ -7,6 +7,7 @@ dist/
 !.env.example
 nts.config.ts
 nts.config.js
+nts.config.mjs
 test-output/
 references/
 .mentu/
@@ -19,3 +20,4 @@ RESULT.md
 # Example fixtures are committed — the broad config pattern above would
 # otherwise hide them from anyone who clones the repo.
 !examples/*/nts.config.js
+!examples/*/nts.config.mjs

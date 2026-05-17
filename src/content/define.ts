@@ -4,7 +4,7 @@ import type { NtxConfig } from '../types.js'
 export type ContentDefinition = NtxConfig
 
 /**
- * Identity helper for authoring a typed config. Lets a plain `nts.config.js`
+ * Identity helper for authoring a typed config. Lets a plain `nts.config.mjs`
  * get full editor autocomplete and type-checking:
  *
  * ```js

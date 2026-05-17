@@ -8,6 +8,16 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "typesVersions": {
+    "*": {
+      "astro": [
+        "./dist/astro/index.d.ts"
+      ],
+      "next": [
+        "./dist/next/index.d.ts"
+      ]
+    }
+  },
   "files": [
     "dist",
     "CHANGELOG.md"
@@ -58,7 +68,7 @@
   "dependencies": {
     "@notionhq/client": "^5.20.0",
     "chalk": "^5.6.2",
-    "commander": "^14.0.3",
+    "commander": "^13.1.0",
     "dotenv": "^17.4.2",
     "gray-matter": "^4.0.3",
     "marked": "^14.0.0",
@@ -90,6 +100,8 @@
     "@types/node": "^25.6.0",
     "@types/react": "^19.0.0",
     "fast-check": "^4.8.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
     "typescript": "^6.0.3"
   }
 }

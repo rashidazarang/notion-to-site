@@ -22,7 +22,7 @@ Open [http://localhost:3000](http://localhost:3000) to see your posts.
 ## How it works
 
 - `next.config.mjs` wraps the config with `withNotion()`, which runs the
-  notion-to-site sync engine (reading `nts.config.js`) and emits a typed
+  notion-to-site sync engine (reading `nts.config.mjs`) and emits a typed
   content module at `.notion-to-site/`.
 - `app/page.tsx` and `app/posts/[slug]/page.tsx` read it through the typed
   `getAllPages()` / `getPageBySlug()` accessors from `notion-to-site/next`.
