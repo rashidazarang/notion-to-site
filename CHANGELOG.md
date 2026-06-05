@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.5.0
+
+### Added
+
+- **Bilingual sample posts.** The bundled `SAMPLE_POSTS` now ship English and
+  Spanish variants (6 posts, distinct localized slugs and a `Language` of `en`/`es`),
+  so `nts template create` produces a fully bilingual demo database out of the box.
+
+### Changed
+
+- Removed em-dashes from the bundled sample copy.
+
 ## 1.4.0
 
 ### Added
