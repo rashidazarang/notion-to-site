@@ -7,10 +7,12 @@ import { join } from 'node:path'
 import {
   getAllPages,
   getPageBySlug,
-  withNotion,
   NotionContent,
   NotionImage,
 } from '../dist/next/index.js'
+// withNotion is the build-time plugin — separate subpath so the runtime barrel
+// above stays free of the sync engine (config loader, sharp, @notionhq/client).
+import { withNotion } from '../dist/next/plugin.js'
 
 function makeContentModule() {
   const dir = mkdtempSync(join(tmpdir(), 'nts-next-'))
@@ -112,4 +114,16 @@ test('NotionImage: uses placeholder + srcSet from the manifest', () => {
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
+})
+
+test('runtime barrel (next/index) stays free of the build-time plugin', async () => {
+  // Architectural guard: withNotion must NOT be re-exported from the runtime
+  // barrel, so pages importing getAllPages/NotionContent don't transitively
+  // pull the sync engine into their server bundle or Next's file trace.
+  const barrel = await import('../dist/next/index.js')
+  assert.equal(barrel.withNotion, undefined)
+  assert.equal(typeof barrel.getAllPages, 'function')
+
+  const plugin = await import('../dist/next/plugin.js')
+  assert.equal(typeof plugin.withNotion, 'function')
 })

@@ -6,6 +6,7 @@
  */
 import * as path from 'path'
 import * as fs from 'fs'
+import matter from 'gray-matter'
 
 import { NotionClient } from './client.js'
 import { NtxRenderer } from './renderer.js'
@@ -16,6 +17,7 @@ import { JsonAdapter } from '../adapters/json.js'
 import { extractProperties, extractPropertiesTyped, validateFrontmatter } from '../schema.js'
 import type { PostFrontmatter } from '../schema.js'
 import { introspectSchema, type NtsSchema } from '../typegen/introspect.js'
+import { classifyDatabase, type DatabaseClassification } from '../classify.js'
 import { emitTypes } from '../typegen/emit.js'
 import { emitContentModule } from '../content/emit-module.js'
 import type { NtxConfig, SyncedPage } from '../types.js'
@@ -177,6 +179,39 @@ function makeLimiter(concurrency: number) {
 
 // ── Frontmatter builders ─────────────────────────────────────────────────────
 
+/**
+ * Reconstructs an already-synced page from its output file. Used for pages an
+ * incremental run skips: without this, the emitted content module would only
+ * contain pages re-rendered this run, dropping every unchanged page (and an
+ * all-skipped run would emit an empty module). Returns null if unreadable.
+ */
+export function readSyncedPage(
+  outputDir: string,
+  slug: string,
+  adapter: 'markdown' | 'mdx' | 'json',
+): SyncedPage | null {
+  const ext = adapter === 'mdx' ? '.mdx' : adapter === 'json' ? '.json' : '.md'
+  const fp = path.join(outputDir, slug + ext)
+  if (!fs.existsSync(fp)) return null
+  try {
+    const raw = fs.readFileSync(fp, 'utf-8')
+    if (adapter === 'json') {
+      const obj = JSON.parse(raw)
+      return { slug, frontmatter: obj.frontmatter, content: obj.content ?? obj.body ?? '' }
+    }
+    if (adapter === 'mdx') {
+      const m = raw.match(/export const meta = (\{[\s\S]*?\n\})/)
+      const frontmatter = m ? JSON.parse(m[1]) : {}
+      const content = raw.replace(/export const meta = \{[\s\S]*?\n\}\n*/, '')
+      return { slug, frontmatter, content }
+    }
+    const parsed = matter(raw)
+    return { slug, frontmatter: parsed.data as any, content: parsed.content }
+  } catch {
+    return null
+  }
+}
+
 function buildLegacyFrontmatter(
   page: any,
   slug: string,
@@ -194,7 +229,7 @@ function buildLegacyFrontmatter(
     type: props.post_type?.toLowerCase() || 'post',
     intent: '',
     version: '1.0',
-    created: page.created_time.split('T')[0],
+    created: props.created ?? page.created_time.split('T')[0],
     last_updated: page.last_edited_time.split('T')[0],
     source: { platform: 'notion', page_id: page.id },
     meta: {
@@ -289,6 +324,29 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
     log(`Generated types for ${ntsSchema.properties.length} properties → ${typesPath}`)
   }
 
+  // ── Classify the database on every sync ──────────────────────────────────
+  // Detect the database's kind + field roles so consumers can sort/route
+  // content without hand-mapping. Reuses the typed-mode schema, else does one
+  // cheap schema fetch; never blocks the sync if it fails.
+  let classifySchema = ntsSchema
+  if (!classifySchema) {
+    try {
+      const dsId = await client.resolveDataSource(databaseId, config.dataSource)
+      classifySchema = introspectSchema(dsId, await client.retrieveDataSourceSchema(dsId))
+    } catch {
+      classifySchema = undefined
+    }
+  }
+  let classification: DatabaseClassification | undefined
+  if (classifySchema) {
+    classification = classifyDatabase(classifySchema)
+    const pct = Math.round(classification.confidence * 100)
+    log(
+      `Classified as "${classification.kind}"${pct ? ` (${pct}%)` : ''}` +
+        (classification.signals.length ? ` — ${classification.signals.join(', ')}` : ''),
+    )
+  }
+
   // ── Pass 1: collect all pages + build slugMap ────────────────────────────
   const queryOpts = {
     filter: config.query?.filter,
@@ -350,6 +408,13 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
 
       if (incremental && !needsUpdate(state, page.id, page.last_edited_time)) {
         skipped++
+        // Keep the emitted content module complete: include this unchanged page
+        // by reading it back from its output file. Without this, an incremental
+        // run drops every skipped page from the module.
+        if (write) {
+          const existing = readSyncedPage(outputDir, slug, config.adapter)
+          if (existing) pages.push(existing)
+        }
         return
       }
 
@@ -462,6 +527,27 @@ export async function sync(options: SyncOptions): Promise<SyncResult> {
       fs.writeFileSync(
         path.join(moduleDir, 'images.json'),
         JSON.stringify(imageManifest, null, 2),
+        'utf-8',
+      )
+    }
+    // Emit the database classification (kind + field roles) for consumers that
+    // want to sort/route content by what the database actually is.
+    if (classifySchema && classification) {
+      fs.mkdirSync(moduleDir, { recursive: true })
+      fs.writeFileSync(
+        path.join(moduleDir, 'schema.json'),
+        JSON.stringify(
+          {
+            dataSourceId: classifySchema.dataSourceId,
+            kind: classification.kind,
+            confidence: classification.confidence,
+            signals: classification.signals,
+            roles: classification.roles,
+            properties: classifySchema.properties,
+          },
+          null,
+          2,
+        ),
         'utf-8',
       )
     }

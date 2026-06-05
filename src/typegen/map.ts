@@ -82,6 +82,16 @@ export function propertyToTypes(prop: NtsPropertySchema): PropertyTypeMapping {
         zod: 'z.object({ prefix: z.string().nullable(), number: z.number().nullable() }).nullable()',
       }
 
+    case 'button':
+      // Buttons trigger actions in the Notion UI; they expose no readable value.
+      return { ts: 'null', zod: 'z.null()' }
+
+    case 'verification':
+      return {
+        ts: '{ state: string; verified_by: string | null; date: { start: string; end: string | null } | null } | null',
+        zod: 'z.object({ state: z.string(), verified_by: z.string().nullable(), date: z.object({ start: z.string(), end: z.string().nullable() }).nullable() }).nullable()',
+      }
+
     default:
       return { ts: 'unknown', zod: 'z.unknown()' }
   }

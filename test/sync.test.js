@@ -1,10 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { buildContentModule, defineContent, emitContentModule } from '../dist/index.js'
+import { readSyncedPage } from '../dist/core/sync.js'
 
 const pages = [
   { slug: 'beta', frontmatter: { title: 'Beta' }, content: '# Beta\n\nbody' },
@@ -68,4 +69,29 @@ test('emitContentModule: marks the generated directory as ESM for Node 18', () =
 test('defineContent: returns the config unchanged (typed identity helper)', () => {
   const config = { database: 'db', output: './content', adapter: 'markdown' }
   assert.strictEqual(defineContent(config), config)
+})
+
+// Regression: an incremental sync that skips a page must still include it in
+// the emitted content module. readSyncedPage reconstructs the page from disk so
+// an all-skipped run does not emit an empty module.
+test('readSyncedPage: round-trips a markdown file into a SyncedPage', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'nts-read-'))
+  try {
+    writeFileSync(
+      join(dir, 'hello.md'),
+      '---\nid: hello\nmeta:\n  title: Hi\n---\n# Hi\n\nbody text',
+      'utf-8',
+    )
+    const page = readSyncedPage(dir, 'hello', 'markdown')
+    assert.equal(page.slug, 'hello')
+    assert.equal(page.frontmatter.meta.title, 'Hi')
+    assert.match(page.content, /# Hi/)
+    assert.match(page.content, /body text/)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('readSyncedPage: returns null for a missing file', () => {
+  assert.equal(readSyncedPage('/tmp/nts-definitely-missing-xyz', 'nope', 'markdown'), null)
 })

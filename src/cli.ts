@@ -60,6 +60,67 @@ export default {
     console.log(chalk.green('✓ Created nts.config.mjs — edit it before running nts sync'))
   })
 
+const template = program
+  .command('template')
+  .description('Scaffold a Notion blog database and seed sample posts')
+
+template
+  .command('create')
+  .description('Create a blog-shaped Notion database under a parent page, then seed sample posts')
+  .requiredOption('--parent <pageId>', 'Notion page ID your integration is shared with')
+  .option('--title <name>', 'Database title', 'Blog')
+  .option('--no-seed', 'Create the database without sample posts')
+  .option('--cover-style <style>', 'stock | none', 'stock')
+  .option('--json', 'Print machine-readable JSON', false)
+  .action(async (opts) => {
+    const { createTemplateDatabase, seedTemplate } = await import('./template/create.js')
+    const res = await createTemplateDatabase({
+      parentPageId: opts.parent,
+      title: opts.title,
+      log: (m) => console.log(chalk.gray(m)),
+    })
+    let seeded: { id: string; title: string; status: string }[] = []
+    if (opts.seed !== false) {
+      const s = await seedTemplate({
+        databaseId: res.databaseId,
+        dataSourceId: res.dataSourceId,
+        coverStyle: opts.coverStyle,
+        log: (m) => console.log(chalk.gray(m)),
+      })
+      seeded = s.created
+    }
+    if (opts.json) {
+      console.log(JSON.stringify({ ...res, seeded }))
+      return
+    }
+    console.log(chalk.green('\n✓ Database ready'))
+    console.log(`  Database ID:  ${chalk.bold(res.databaseId)}`)
+    console.log(chalk.gray('  → put this in nts.config.mjs `database` / NOTION_DATABASE_ID'))
+    if (res.url) console.log(`  Open:         ${res.url}`)
+    console.log(chalk.gray('\nNext: set NOTION_DATABASE_ID, then run `nts sync`.'))
+  })
+
+template
+  .command('seed')
+  .description('Add sample posts to an existing database (idempotent)')
+  .requiredOption('--db <databaseId>', 'Target database ID')
+  .option('--count <n>', 'Number of sample posts to create')
+  .option('--cover-style <style>', 'stock | none', 'stock')
+  .option('--force', 'Create posts even if a matching title/slug already exists', false)
+  .action(async (opts) => {
+    const { seedTemplate } = await import('./template/create.js')
+    const s = await seedTemplate({
+      databaseId: opts.db,
+      count: opts.count ? parseInt(opts.count, 10) : undefined,
+      coverStyle: opts.coverStyle,
+      force: opts.force,
+      log: (m) => console.log(chalk.gray(m)),
+    })
+    console.log(
+      chalk.green(`\n✓ Seeded ${s.created.length} post(s), skipped ${s.skipped.length}.`),
+    )
+  })
+
 program
   .command('sync')
   .description('Sync Notion database to local content files')
@@ -90,6 +151,30 @@ program
         `✓ Generated types for ${schema.properties.length} properties → ${typesPath}`,
       ),
     )
+  })
+
+program
+  .command('classify')
+  .description("Detect the database's kind (blog, people, projects, …) and field roles")
+  .action(async () => {
+    const config = await loadConfig()
+    const { introspectSchema } = await import('./typegen/introspect.js')
+    const { classifyDatabase } = await import('./classify.js')
+    const client = new NotionClient()
+    const dsId = await client.resolveDataSource(config.database, config.dataSource)
+    const schema = introspectSchema(dsId, await client.retrieveDataSourceSchema(dsId))
+    const c = classifyDatabase(schema)
+    console.log(
+      chalk.bold(`\nDatabase kind: `) +
+        chalk.cyan(c.kind) +
+        chalk.gray(` (${Math.round(c.confidence * 100)}%)`),
+    )
+    if (c.signals.length) console.log(chalk.gray(`  signals: ${c.signals.join(', ')}`))
+    console.log(chalk.bold('\nField roles:'))
+    for (const [role, name] of Object.entries(c.roles)) {
+      console.log(`  ${role.padEnd(12)} ${name ? chalk.green(name) : chalk.gray('(none)')}`)
+    }
+    console.log('')
   })
 
 program

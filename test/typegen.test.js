@@ -126,3 +126,36 @@ test('extractPropertiesTyped: missing properties get type-appropriate empties', 
   assert.equal(out.Priority, null)
   assert.deepEqual(out.Related, [])
 })
+
+test('propertyToTypes: button and verification are recognized (full field coverage)', () => {
+  assert.equal(propertyToTypes({ name: 'B', type: 'button' }).ts, 'null')
+  assert.match(propertyToTypes({ name: 'V', type: 'verification' }).ts, /state: string/)
+})
+
+test('extractPropertiesTyped: button is null and verification is structured', () => {
+  const schema = introspectSchema('ds1', {
+    Name: { name: 'Name', type: 'title', title: {} },
+    Approve: { name: 'Approve', type: 'button', button: {} },
+    Verified: { name: 'Verified', type: 'verification', verification: {} },
+  })
+  const page = {
+    id: 'p',
+    properties: {
+      Name: { type: 'title', title: [{ plain_text: 'X' }] },
+      Approve: { type: 'button', button: {} },
+      Verified: {
+        type: 'verification',
+        verification: {
+          state: 'verified',
+          verified_by: { name: 'Ana' },
+          date: { start: '2026-01-01', end: null },
+        },
+      },
+    },
+  }
+  const out = extractPropertiesTyped(page, schema)
+  assert.equal(out.Approve, null)
+  assert.equal(out.Verified.state, 'verified')
+  assert.equal(out.Verified.verified_by, 'Ana')
+  assert.equal(out.Verified.date.start, '2026-01-01')
+})

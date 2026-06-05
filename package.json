@@ -1,6 +1,6 @@
 {
   "name": "notion-to-site",
-  "version": "1.1.2",
+  "version": "1.4.0",
   "description": "Sync any Notion database to static markdown, MDX, or JSON files",
   "type": "module",
   "bin": {
@@ -15,6 +15,9 @@
       ],
       "next": [
         "./dist/next/index.d.ts"
+      ],
+      "next/plugin": [
+        "./dist/next/plugin.d.ts"
       ]
     }
   },
@@ -34,11 +37,16 @@
     "./next": {
       "types": "./dist/next/index.d.ts",
       "import": "./dist/next/index.js"
+    },
+    "./next/plugin": {
+      "types": "./dist/next/plugin.d.ts",
+      "import": "./dist/next/plugin.js"
     }
   },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
+    "prepare": "tsc",
     "pretest": "npm run build",
     "test": "node --test test/*.test.js",
     "prepublishOnly": "npm test"

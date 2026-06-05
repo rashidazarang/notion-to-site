@@ -1,5 +1,76 @@
 # Changelog
 
+## 1.4.0
+
+### Added
+
+- **Full Notion property-type coverage.** `button` and `verification` are now
+  recognized in typed mode (was 21/23). `button` extracts to `null` (action-only);
+  `verification` to `{ state, verified_by, date }`. No more `unknown` fallthrough
+  for real Notion types.
+- **Database classification on every sync.** `classifyDatabase()` infers the
+  database KIND (blog, people, projects, tasks, docs, changelog, events, products,
+  generic) and `inferRoles()` detects which property fills each role (title, slug,
+  date, cover, status, description, tags, category, author, language). It is:
+  logged on every sync, written to `.notion-to-site/schema.json`, available via the
+  new `nts classify` command, and exported programmatically. Runs in both schema
+  modes (one cheap schema fetch in legacy mode) and never blocks a sync if it fails.
+
+## 1.3.0
+
+### Added
+
+- **`nts template create` / `nts template seed`** — scaffold a blog-shaped Notion
+  database under a parent page and seed sample posts, all in one command
+  (Notion 2025-09-03 data-source aware). Programmatic API: `createTemplateDatabase`,
+  `seedTemplate`, plus bundled `SAMPLE_POSTS` / `samplePostToPageParams` and
+  `BLOG_DATA_SOURCE_PROPERTIES`. Seeding is idempotent (skips existing Title/Slug).
+- **`cover_image` from a property** — `extractProperties` now reads a
+  `Cover`/`Image` property (`url` or first `files` entry), falling back to
+  `page.cover`. Page covers from uploaded files expire (~1h); a URL property is
+  stable. Backward-compatible (legacy mode).
+- **`created` from a date property** — reads a `Date`/`Published` date property
+  into `frontmatter.created` (normalized to `YYYY-MM-DD`), falling back to
+  `page.created_time`, so authors can set a real publish date. Backward-compatible.
+
+### Fixed
+
+- **Incremental sync no longer emits an empty content module.** `withNotion`
+  runs sync on every dev/build (incrementally), so a run that skipped all
+  unchanged pages re-emitted `.notion-to-site/index.js` with only that run's
+  pages — i.e. empty — wiping previously synced content from the Next.js reader.
+  Skipped pages are now read back from their output files so the emitted module
+  always reflects the full set. New `readSyncedPage` helper + tests.
+
+## 1.2.0
+
+### Changed (breaking)
+
+- **`withNotion` moved to a build-time-only subpath: `notion-to-site/next/plugin`.**
+  It is no longer re-exported from the runtime barrel `notion-to-site/next`.
+  Update your config: `import { withNotion } from 'notion-to-site/next/plugin'`.
+  This keeps the sync engine (`@notionhq/client`, `sharp`, the config loader) out
+  of consumers' runtime/server bundles. Previously, any page importing
+  `getAllPages` / `<NotionContent>` from `notion-to-site/next` transitively pulled
+  the whole sync engine, which bloated serverless functions and made Next's file
+  tracer (NFT) warn that it had traced the whole project via the dynamic config
+  loader. Runtime readers (`getAllPages`, `getPageBySlug`, `NotionContent`,
+  `NotionImage`) still import from `notion-to-site/next`.
+
+### Fixed
+
+- **Turbopack compatibility for the dynamic content-module + config imports.**
+  The runtime `import()`s in `next/api.ts` and the config loader carried only
+  `/* webpackIgnore: true */`; under Next's Turbopack bundler this raised a
+  dynamic-path warning. They now also carry `/* turbopackIgnore: true */` so both
+  bundlers leave them as native runtime imports.
+
+### Notes
+
+- The Next config must be ESM (`next.config.mjs`). The package is ESM-only (no
+  `require` condition), so a `next.config.ts` loaded through Next's CJS config
+  path fails to resolve the `./next/plugin` subpath export.
+
 ## 1.1.2
 
 ### Added

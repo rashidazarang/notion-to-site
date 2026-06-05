@@ -114,3 +114,63 @@ test('extractProperties: a slug of only special characters falls back to null', 
   // slugify('....') → '' → null fallback, so sync.ts will slugify(title) instead.
   assert.equal(props.slug, null)
 })
+
+test('extractProperties: cover_image prefers a Cover url property over page.cover', () => {
+  const page = {
+    properties: {
+      Name: { type: 'title', title: [{ plain_text: 'X' }] },
+      Cover: { type: 'url', url: 'https://cdn.example.com/from-prop.webp' },
+    },
+    cover: { type: 'external', external: { url: 'https://x.com/page-cover.png' } },
+  }
+  assert.equal(extractProperties(page).cover_image, 'https://cdn.example.com/from-prop.webp')
+})
+
+test('extractProperties: cover_image reads the first file from a Cover files property', () => {
+  const page = {
+    properties: {
+      Name: { type: 'title', title: [{ plain_text: 'X' }] },
+      Cover: {
+        type: 'files',
+        files: [{ type: 'external', external: { url: 'https://cdn.example.com/file.webp' } }],
+      },
+    },
+    cover: null,
+  }
+  assert.equal(extractProperties(page).cover_image, 'https://cdn.example.com/file.webp')
+})
+
+test('extractProperties: cover_image falls back to page.cover when no Cover property', () => {
+  const page = {
+    properties: { Name: { type: 'title', title: [{ plain_text: 'X' }] } },
+    cover: { type: 'external', external: { url: 'https://x.com/page-cover.png' } },
+  }
+  assert.equal(extractProperties(page).cover_image, 'https://x.com/page-cover.png')
+})
+
+test('extractProperties: created reads a Date property', () => {
+  const page = {
+    properties: {
+      Name: { type: 'title', title: [{ plain_text: 'X' }] },
+      Date: { type: 'date', date: { start: '2026-02-01' } },
+    },
+    cover: null,
+  }
+  assert.equal(extractProperties(page).created, '2026-02-01')
+})
+
+test('extractProperties: created normalizes a datetime to YYYY-MM-DD', () => {
+  const page = {
+    properties: {
+      Name: { type: 'title', title: [{ plain_text: 'X' }] },
+      Published: { type: 'date', date: { start: '2026-02-01T10:00:00.000Z' } },
+    },
+    cover: null,
+  }
+  assert.equal(extractProperties(page).created, '2026-02-01')
+})
+
+test('extractProperties: created is null without a Date property', () => {
+  const props = extractProperties({ properties: {}, cover: null })
+  assert.equal(props.created, null)
+})

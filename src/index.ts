@@ -41,6 +41,18 @@ export type { NtsSchema, NtsPropertySchema } from './typegen/introspect.js'
 export { propertyToTypes } from './typegen/map.js'
 export type { PropertyTypeMapping } from './typegen/map.js'
 export { emitTypes } from './typegen/emit.js'
+export { classifyDatabase, inferRoles } from './classify.js'
+export type { DatabaseClassification, DatabaseKind, FieldRoles } from './classify.js'
+export { createTemplateDatabase, seedTemplate } from './template/create.js'
+export type {
+  CreateTemplateOptions,
+  CreateTemplateResult,
+  SeedOptions,
+  SeedResult,
+} from './template/create.js'
+export { SAMPLE_POSTS, samplePostToPageParams } from './template/fixtures.js'
+export type { SamplePost } from './template/fixtures.js'
+export { BLOG_DATA_SOURCE_PROPERTIES } from './template/schema-def.js'
 export { loadConfig } from './config.js'
 export { migrationAdvice } from './migrate.js'
 export type { MigrationAdvice } from './migrate.js'

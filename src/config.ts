@@ -18,7 +18,9 @@ export async function loadConfig(cwd?: string): Promise<NtxConfig> {
   }
 
   try {
-    const mod = await import(pathToFileURL(targetPath).href)
+    const mod = await import(
+      /* webpackIgnore: true */ /* turbopackIgnore: true */ pathToFileURL(targetPath).href
+    )
     const config: NtxConfig = mod.default ?? mod
     if (!config.database) throw new Error('nts.config: `database` is required')
     if (!config.output) throw new Error('nts.config: `output` is required')

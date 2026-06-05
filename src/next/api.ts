@@ -35,12 +35,14 @@ async function importContentModule(modPath: string): Promise<{ pages?: ContentPa
   }
 
   if (isEsmPackage) {
-    return import(/* webpackIgnore: true */ pathToFileURL(modPath).href)
+    return import(
+      /* webpackIgnore: true */ /* turbopackIgnore: true */ pathToFileURL(modPath).href
+    )
   }
 
   const source = fs.readFileSync(modPath, 'utf-8')
   const dataUrl = `data:text/javascript;charset=utf-8,${encodeURIComponent(source)}`
-  return import(/* webpackIgnore: true */ dataUrl)
+  return import(/* webpackIgnore: true */ /* turbopackIgnore: true */ dataUrl)
 }
 
 async function loadPages(dir: string): Promise<ContentPage[]> {

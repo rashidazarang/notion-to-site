@@ -66,6 +66,8 @@ export interface NotionPageProperties {
   main_tag: string | null
   post_type: string
   domain_tags: string[]
+  /** Publish date from a Date/Published property, or null to fall back to the page's created_time. */
+  created: string | null
 }
 
 type PageProperty = PageObjectResponse['properties'][string]
@@ -214,12 +216,20 @@ export function extractProperties(page: PageObjectResponse): NotionPagePropertie
     post_type = typeProp.select?.name ?? 'Post'
   }
 
-  // Cover image
+  // Cover image — prefer an explicit Cover/Image property (stable, author-set),
+  // then fall back to the Notion page cover (which expires for uploaded files).
   let cover_image = ''
-  const cover = page.cover
-  if (cover) {
-    if (cover.type === 'external') cover_image = cover.external.url
-    else if (cover.type === 'file') cover_image = cover.file.url
+  const coverProp = findProperty(props, ['Cover', 'cover', 'Cover Image', 'Image', 'cover_image'])
+  if (coverProp?.type === 'url') {
+    cover_image = coverProp.url ?? ''
+  } else if (coverProp?.type === 'files') {
+    const f = (coverProp.files ?? [])[0] as any
+    cover_image = f?.type === 'external' ? f.external.url : f?.type === 'file' ? f.file.url : ''
+  }
+  if (!cover_image) {
+    const cover = page.cover
+    if (cover?.type === 'external') cover_image = cover.external.url
+    else if (cover?.type === 'file') cover_image = cover.file.url
   }
 
   // Domain Tags — per-page routing across multi-surface sites
@@ -229,10 +239,19 @@ export function extractProperties(page: PageObjectResponse): NotionPagePropertie
     domain_tags = domainTagsProp.multi_select.map((t: any) => t.name)
   }
 
+  // Publish date — an explicit Date/Published property; null falls back to the
+  // page's created_time at frontmatter-build time.
+  let created: string | null = null
+  const dateProp = findProperty(props, ['Date', 'date', 'Published', 'Published Date', 'Publish Date'])
+  if (dateProp?.type === 'date') {
+    const start = dateProp.date?.start ?? ''
+    if (start) created = start.split('T')[0]
+  }
+
   return {
     title, slug, status, tags, main_tag, category, featured, featured_at,
     language, cover_image, author, description, seo_title, canonical, post_type,
-    domain_tags,
+    domain_tags, created,
   }
 }
 
@@ -308,6 +327,18 @@ function extractTypedValue(raw: any, type: string): unknown {
       return raw.unique_id
         ? { prefix: raw.unique_id.prefix ?? null, number: raw.unique_id.number ?? null }
         : null
+    case 'button':
+      // Action-only in the UI; no readable value.
+      return null
+    case 'verification': {
+      const v = raw.verification
+      if (!v) return null
+      return {
+        state: v.state ?? '',
+        verified_by: v.verified_by?.name ?? v.verified_by?.id ?? null,
+        date: v.date ? { start: v.date.start, end: v.date.end ?? null } : null,
+      }
+    }
     default:
       return null
   }

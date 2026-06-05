@@ -56,6 +56,29 @@ nts sync
 
 Your content files will appear in `./content`.
 
+## Get a blog database in one command
+
+Don't have a database yet? `nts template create` builds a blog-shaped Notion
+database with the right properties (Title, Slug, Status, Category, Tags,
+Language, Author, SEO Title, Description, Date, Cover) and seeds a few sample
+posts. Set `NOTION_API_KEY`, share a Notion **page** with your integration, then:
+
+```bash
+nts template create --parent <pageId>
+# ✓ Database ready
+#   Database ID:  24f10a3b-…-9c2e   ← put this in nts.config.mjs / NOTION_DATABASE_ID
+```
+
+Add posts to an existing database any time (idempotent — it won't duplicate):
+
+```bash
+nts template seed --db <databaseId>
+```
+
+Prefer clicking? Duplicate the public Notion template, share the copy with your
+integration, and paste its id into your config. Either path lands you on the
+same schema.
+
 ## Config reference
 
 | Field | Type | Default | Description |
@@ -143,6 +166,9 @@ If your database has a `Domain Tags` multi-select column, its values are written
 | Command | Description |
 |---|---|
 | `nts init` | Create `nts.config.mjs` in the current directory |
+| `nts template create --parent <pageId>` | Create a blog-shaped database under a page and seed sample posts |
+| `nts template seed --db <id>` | Add sample posts to an existing database (idempotent) |
+| `nts classify` | Detect the database's kind (blog, people, projects, …) + field roles |
 | `nts sync` | Full sync of your Notion database to local files |
 | `nts sync --incremental` | Only sync pages changed since the last run |
 | `nts sync --db <id>` | Override the database ID from config |
@@ -219,9 +245,15 @@ Wrap your `next.config` with `withNotion()` to sync on every build, then read co
 
 ```js
 // next.config.mjs
-import { withNotion } from 'notion-to-site/next'
+import { withNotion } from 'notion-to-site/next/plugin'
 export default withNotion({})
 ```
+
+> `withNotion` lives in the build-time entry `notion-to-site/next/plugin` so the
+> sync engine (`@notionhq/client`, `sharp`) never lands in your runtime/server
+> bundle or Next's file trace. The runtime readers below import from
+> `notion-to-site/next`. Use an ESM config (`next.config.mjs`): the package is
+> ESM-only, so `next.config.ts` cannot resolve the subpath export.
 
 ```tsx
 // app/posts/[slug]/page.tsx
