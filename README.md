@@ -8,6 +8,14 @@ Turn any Notion database into typed content for your site.
 - **Framework integrations.** First-class loaders for Astro (`notion-to-site/astro`) and Next.js (`notion-to-site/next`).
 - **Incremental updates.** Track what changed since the last sync. Only re-fetch updated pages.
 
+## Project surfaces
+
+- `src/` is the published library and CLI.
+- `examples/` contains minimal framework examples.
+- `experiments/platform-kernel/` preserves the parked provisioning kernel that
+  once lived in `notion-to-site-platform`. It is historical proof, not an active
+  product surface.
+
 ## Install
 
 ```bash
